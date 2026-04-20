@@ -22,7 +22,7 @@ function maskKey(key) {
 }
 
 const MODES = ['sequential', 'nobatchio', 'full'];
-const CLIENTS = ['besu', 'geth', 'nethermind'];
+const CLIENTS = ['besu', 'geth', 'nethermind', 'erigon', 'reth'];
 
 const MODE_COLORS = {
   sequential: '#f87171',
@@ -34,6 +34,8 @@ const CLIENT_COLORS = {
   besu: '#a78bfa',
   geth: '#fbbf24',
   nethermind: '#22d3ee',
+  erigon: '#f472b6',
+  reth: '#fb923c',
 };
 
 const COMPARISONS = {
