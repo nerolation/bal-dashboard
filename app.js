@@ -411,14 +411,16 @@ function cycleClientSort(col) {
 function renderHead(info) {
   const tr = document.getElementById('head-row');
   tr.replaceChildren();
+  const stickyBase =
+    'sticky top-0 z-10 bg-gray-900 border-b border-gray-800 px-3 py-2 font-medium shadow-sm/30';
   const testTh = document.createElement('th');
-  testTh.className = 'px-3 py-2 text-left font-medium';
+  testTh.className = `${stickyBase} text-left`;
   testTh.textContent = 'Test';
   tr.appendChild(testTh);
   const sortable = info.kind === 'clients';
   for (const col of info.columns) {
     const th = document.createElement('th');
-    th.className = 'px-3 py-2 text-right font-medium';
+    th.className = `${stickyBase} text-right`;
     let label = info.kind === 'modes' ? modeLabel(col) : col;
     if (sortable && state.clientSort.column === col) {
       label += state.clientSort.direction === 'asc' ? ' ▲' : ' ▼';
@@ -434,7 +436,7 @@ function renderHead(info) {
   if (info.showGain) {
     const gainTh = document.createElement('th');
     gainTh.id = 'gain-header';
-    gainTh.className = 'px-3 py-2 text-right font-medium';
+    gainTh.className = `${stickyBase} text-right`;
     tr.appendChild(gainTh);
   }
 }
