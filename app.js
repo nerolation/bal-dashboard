@@ -160,16 +160,66 @@ function buildEntries(method) {
   return entries;
 }
 
-function rowSlowness(entry) {
-  const vals = [entry.aggs.nobatchio, entry.aggs.full].filter((v) => v != null);
+function buildClientFullEntries(method) {
+  const byTest = new Map();
+  for (const client of CLIENTS) {
+    const rows = state.rowsByClient[client] || [];
+    for (const row of rows) {
+      if (modeFromRunId(row.run_id) !== 'full') continue;
+      if (row.total_mgas_s == null) continue;
+      let e = byTest.get(row.test_name);
+      if (!e) {
+        e = { test: row.test_name, aggs: {}, counts: {}, _raw: {} };
+        for (const c of CLIENTS) {
+          e._raw[c] = [];
+          e.counts[c] = 0;
+        }
+        byTest.set(row.test_name, e);
+      }
+      e._raw[client].push(row.total_mgas_s);
+      e.counts[client] += 1;
+    }
+  }
+  const entries = [];
+  for (const e of byTest.values()) {
+    for (const c of CLIENTS) e.aggs[c] = aggregate(e._raw[c], method);
+    delete e._raw;
+    entries.push(e);
+  }
+  return entries;
+}
+
+function tabInfo() {
+  if (state.tab === 'clients-full') {
+    return {
+      kind: 'clients',
+      columns: CLIENTS,
+      slowCols: CLIENTS,
+      showGain: false,
+      colorMap: CLIENT_COLORS,
+    };
+  }
+  const match = state.tab.match(/^slowest-(\d+)$/);
+  return {
+    kind: 'modes',
+    columns: MODES,
+    slowCols: ['nobatchio', 'full'],
+    showGain: true,
+    colorMap: MODE_COLORS,
+    slowestN: match ? parseInt(match[1], 10) : null,
+  };
+}
+
+function rowSlowness(entry, cols) {
+  const vals = cols.map((c) => entry.aggs[c]).filter((v) => v != null);
   return vals.length ? Math.min(...vals) : null;
 }
 
-function findSlowestEntry(entries) {
+function findSlowestEntry(entries, cols) {
   let slowest = null;
   let slowestVal = Infinity;
   for (const entry of entries) {
-    const v = rowSlowness(entry);
+    const v = rowSlowness(entry, cols);
     if (v != null && v < slowestVal) {
       slowestVal = v;
       slowest = entry;
@@ -178,12 +228,13 @@ function findSlowestEntry(entries) {
   return slowest;
 }
 
-function makeRow(entry, comparison, isSlowest) {
+function makeRow(entry, { info, comparison, isSlowest }) {
   const tr = document.createElement('tr');
   tr.className = 'group cursor-pointer border-b border-gray-800 hover:bg-gray-900/60';
   tr.addEventListener('click', () => showChart(entry.test));
+  const slowLabel = info.slowCols.join(' + ');
   tr.title = isSlowest
-    ? 'Slowest row across nobatchio + full — click for chart'
+    ? `Slowest row across ${slowLabel} — click for chart`
     : 'Click to chart MGas/s vs gas limit';
   if (isSlowest) {
     tr.classList.add('bg-rose-950/40', 'border-l-2', 'border-l-rose-500');
@@ -200,46 +251,104 @@ function makeRow(entry, comparison, isSlowest) {
   tdTest.appendChild(inner);
   tr.appendChild(tdTest);
 
-  const present = MODES.map((m) => entry.aggs[m]).filter((v) => v != null);
+  const present = info.columns.map((c) => entry.aggs[c]).filter((v) => v != null);
   const best = present.length > 1 ? Math.max(...present) : null;
 
-  for (const mode of MODES) {
+  for (const col of info.columns) {
     const td = document.createElement('td');
     td.className = 'px-3 py-2 text-right tabular-nums';
-    const v = entry.aggs[mode];
+    const v = entry.aggs[col];
     if (v == null) {
       td.textContent = '—';
       td.classList.add('text-gray-600');
     } else {
       td.textContent = v.toFixed(2);
-      td.title = `n=${entry.counts[mode]}`;
+      td.title = `n=${entry.counts[col]}`;
       if (best != null && v === best) {
         td.classList.add('bg-emerald-900/40', 'text-emerald-300', 'font-semibold');
       }
     }
-    if (mode === comparison.baseline || mode === comparison.target) {
+    if (comparison && (col === comparison.baseline || col === comparison.target)) {
       td.classList.add('ring-1', 'ring-inset', 'ring-gray-700');
     }
     tr.appendChild(td);
   }
 
-  const tdGain = document.createElement('td');
-  tdGain.className = 'px-3 py-2 text-right tabular-nums';
-  const b = entry.aggs[comparison.baseline];
-  const t = entry.aggs[comparison.target];
-  if (b != null && t != null && b > 0) {
-    const gain = (t - b) / b;
-    tdGain.textContent = fmtPct(gain);
-    if (gain > 0.02) tdGain.classList.add('text-emerald-400');
-    else if (gain < -0.02) tdGain.classList.add('text-rose-400');
-    else tdGain.classList.add('text-gray-400');
-  } else {
-    tdGain.textContent = '—';
-    tdGain.classList.add('text-gray-600');
+  if (info.showGain && comparison) {
+    const tdGain = document.createElement('td');
+    tdGain.className = 'px-3 py-2 text-right tabular-nums';
+    const b = entry.aggs[comparison.baseline];
+    const t = entry.aggs[comparison.target];
+    if (b != null && t != null && b > 0) {
+      const gain = (t - b) / b;
+      tdGain.textContent = fmtPct(gain);
+      if (gain > 0.02) tdGain.classList.add('text-emerald-400');
+      else if (gain < -0.02) tdGain.classList.add('text-rose-400');
+      else tdGain.classList.add('text-gray-400');
+    } else {
+      tdGain.textContent = '—';
+      tdGain.classList.add('text-gray-600');
+    }
+    tr.appendChild(tdGain);
   }
-  tr.appendChild(tdGain);
 
   return tr;
+}
+
+function renderHead(info) {
+  const tr = document.getElementById('head-row');
+  tr.replaceChildren();
+  const testTh = document.createElement('th');
+  testTh.className = 'px-3 py-2 text-left font-medium';
+  testTh.textContent = 'Test';
+  tr.appendChild(testTh);
+  for (const col of info.columns) {
+    const th = document.createElement('th');
+    th.className = 'px-3 py-2 text-right font-medium';
+    th.textContent = col;
+    tr.appendChild(th);
+  }
+  if (info.showGain) {
+    const gainTh = document.createElement('th');
+    gainTh.id = 'gain-header';
+    gainTh.className = 'px-3 py-2 text-right font-medium';
+    tr.appendChild(gainTh);
+  }
+}
+
+function renderSpreadSummary(entries, info) {
+  const el = document.getElementById('gain-summary');
+  const ratios = [];
+  const gaps = [];
+  for (const entry of entries) {
+    const vals = info.columns.map((c) => entry.aggs[c]).filter((v) => v != null && v > 0);
+    if (vals.length < 2) continue;
+    const mx = Math.max(...vals);
+    const mn = Math.min(...vals);
+    ratios.push(mx / mn);
+    gaps.push((mx - mn) / mn);
+  }
+  el.className = 'mt-4 rounded-xs border border-gray-800 bg-gray-900/40 px-4 py-3 text-sm';
+  el.replaceChildren();
+  if (!ratios.length) {
+    el.textContent = 'No tests have full-mode data from 2+ clients.';
+    el.classList.add('text-gray-400');
+    return;
+  }
+  const meanRatio = ratios.reduce((a, b) => a + b, 0) / ratios.length;
+  const medianRatio = aggregate(ratios, 'median');
+  const maxRatio = Math.max(...ratios);
+  const meanGap = gaps.reduce((a, b) => a + b, 0) / gaps.length;
+  const line1 = document.createElement('div');
+  line1.className = 'text-gray-400';
+  line1.textContent = `Full-mode client spread across ${ratios.length} tests:`;
+  const line2 = document.createElement('div');
+  line2.className = 'mt-1 text-lg font-semibold tabular-nums text-gray-100';
+  line2.textContent = `${meanRatio.toFixed(2)}× (fastest / slowest, mean)`;
+  const line3 = document.createElement('div');
+  line3.className = 'mt-1 text-xs text-gray-500 tabular-nums';
+  line3.textContent = `median ${medianRatio.toFixed(2)}× · max ${maxRatio.toFixed(2)}× · avg gap ${fmtPct(meanGap)}`;
+  el.append(line1, line2, line3);
 }
 
 function renderGainSummary(entries, comparison) {
@@ -307,33 +416,54 @@ function render() {
   const method = document.getElementById('method').value;
   const comparisonKey = document.getElementById('comparison').value;
   const comparison = COMPARISONS[comparisonKey];
+  const info = tabInfo();
 
-  document.getElementById('gain-header').textContent = `Gain (${comparison.target} vs ${comparison.baseline})`;
+  renderHead(info);
+  if (info.showGain) {
+    document.getElementById('gain-header').textContent = `Gain (${comparison.target} vs ${comparison.baseline})`;
+  }
 
-  const entries = buildEntries(method).filter(isEntryEnabled);
+  let entries;
+  if (info.kind === 'clients') {
+    entries = buildClientFullEntries(method).filter(isEntryEnabled);
+  } else {
+    entries = buildEntries(method).filter(isEntryEnabled);
+  }
 
   let displayed;
-  if (state.tab.startsWith('slowest-')) {
-    const n = parseInt(state.tab.slice('slowest-'.length), 10);
+  if (info.kind === 'modes' && info.slowestN != null) {
     displayed = entries
       .filter((e) => e.aggs[comparison.baseline] != null)
       .sort((a, b) => a.aggs[comparison.baseline] - b.aggs[comparison.baseline])
-      .slice(0, n);
+      .slice(0, info.slowestN);
   } else {
     displayed = [...entries].sort(compareBySortKey);
   }
 
-  const slowestEntry = findSlowestEntry(displayed);
+  const slowestEntry = findSlowestEntry(displayed, info.slowCols);
   const tbody = document.getElementById('results-body');
   tbody.replaceChildren();
   for (const entry of displayed) {
-    tbody.appendChild(makeRow(entry, comparison, entry === slowestEntry));
+    tbody.appendChild(
+      makeRow(entry, {
+        info,
+        comparison: info.showGain ? comparison : null,
+        isSlowest: entry === slowestEntry,
+      }),
+    );
   }
 
-  renderGainSummary(displayed, comparison);
+  if (info.kind === 'clients') {
+    renderSpreadSummary(displayed, info);
+  } else {
+    renderGainSummary(displayed, comparison);
+  }
 
+  const totalRows = Object.values(state.rowsByClient).reduce((a, r) => a + (r?.length || 0), 0);
   document.getElementById('summary').textContent =
-    `${displayed.length} rows · ${method} · ${state.rows.length} total rows`;
+    info.kind === 'clients'
+      ? `${displayed.length} tests · ${method} · ${totalRows} total rows (all clients)`
+      : `${displayed.length} rows · ${method} · ${state.rows.length} rows for ${state.client}`;
 }
 
 function setTab(tab) {
