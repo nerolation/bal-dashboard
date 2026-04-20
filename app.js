@@ -23,9 +23,9 @@ function maskKey(key) {
 
 const MODES = ['sequential', 'nobatchio', 'full'];
 const MODE_LABELS = {
-  sequential: 'sequential',
+  sequential: 'Sequential',
   nobatchio: 'No Batch I/O',
-  full: 'full',
+  full: 'Full',
 };
 function modeLabel(mode) {
   return MODE_LABELS[mode] || mode;
