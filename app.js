@@ -122,11 +122,11 @@ function groupByTest(rows) {
   for (const row of rows) {
     const mode = modeFromRunId(row.run_id);
     if (!mode) continue;
-    if (row.total_mgas_s == null) continue;
+    if (row.test_mgas_s == null) continue;
     if (!groups.has(row.test_name)) {
       groups.set(row.test_name, { sequential: [], nobatchio: [], full: [] });
     }
-    groups.get(row.test_name)[mode].push(row.total_mgas_s);
+    groups.get(row.test_name)[mode].push(row.test_mgas_s);
   }
   return groups;
 }
@@ -167,7 +167,7 @@ function buildClientFullEntries(method) {
     const rows = state.rowsByClient[client] || [];
     for (const row of rows) {
       if (modeFromRunId(row.run_id) !== 'full') continue;
-      if (row.total_mgas_s == null) continue;
+      if (row.test_mgas_s == null) continue;
       let e = byTest.get(row.test_name);
       if (!e) {
         e = { test: row.test_name, aggs: {}, counts: {}, _raw: {} };
@@ -177,7 +177,7 @@ function buildClientFullEntries(method) {
         }
         byTest.set(row.test_name, e);
       }
-      e._raw[client].push(row.total_mgas_s);
+      e._raw[client].push(row.test_mgas_s);
       e.counts[client] += 1;
     }
   }
@@ -525,11 +525,11 @@ function buildFamilyBuckets(rows, familyKey) {
     if (extractFamilyKey(row.test_name) !== familyKey) continue;
     const mode = modeFromRunId(row.run_id);
     if (!mode) continue;
-    if (row.total_mgas_s == null) continue;
+    if (row.test_mgas_s == null) continue;
     const gas = extractGasLimit(row.test_name);
     if (gas == null) continue;
     if (!buckets.has(gas)) buckets.set(gas, { sequential: [], nobatchio: [], full: [] });
-    buckets.get(gas)[mode].push(row.total_mgas_s);
+    buckets.get(gas)[mode].push(row.test_mgas_s);
     uniqTests.add(row.test_name);
     samples += 1;
   }
@@ -605,11 +605,11 @@ function renderFullAcrossClientsChart(familyKey, method) {
     for (const row of rows) {
       if (extractFamilyKey(row.test_name) !== familyKey) continue;
       if (modeFromRunId(row.run_id) !== 'full') continue;
-      if (row.total_mgas_s == null) continue;
+      if (row.test_mgas_s == null) continue;
       const gas = extractGasLimit(row.test_name);
       if (gas == null) continue;
       if (!bucket.has(gas)) bucket.set(gas, []);
-      bucket.get(gas).push(row.total_mgas_s);
+      bucket.get(gas).push(row.test_mgas_s);
       allGas.add(gas);
     }
     perClient[client] = bucket;
