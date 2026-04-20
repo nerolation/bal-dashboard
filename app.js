@@ -79,6 +79,99 @@ function displayTestName(name) {
   return name.endsWith('.txt') ? name.slice(0, -4) : name;
 }
 
+function parseTestName(testName) {
+  const s = displayTestName(testName);
+  const m = s.match(/^(.+?\.py)__([^\[]+)(?:\[(.+)\])?$/);
+  if (!m) return { raw: s, params: [] };
+  const [, file, func, paramsRaw = ''] = m;
+  const tokens = paramsRaw ? paramsRaw.split('-') : [];
+  const params = [];
+  for (const token of tokens) {
+    if (token === 'benchmark_test') continue;
+    let mm;
+    if ((mm = token.match(/^benchmark_(\d+)M$/))) {
+      params.push({ label: `${mm[1]}M gas`, tone: 'emerald' });
+    } else if ((mm = token.match(/^fork_(.+)$/))) {
+      params.push({ label: mm[1], tone: 'slate' });
+    } else if ((mm = token.match(/^(\d+)GB$/))) {
+      params.push({ label: `${mm[1]} GB state`, tone: 'sky' });
+    } else if ((mm = token.match(/^compute_(\d+)pct$/))) {
+      params.push({ label: `compute ${mm[1]}%`, tone: 'amber' });
+    } else if (token === 'forward' || token === 'reverse') {
+      params.push({ label: token, tone: 'violet' });
+    } else if ((mm = token.match(/^existing_slots_(True|False)$/))) {
+      params.push({ label: mm[1] === 'True' ? 'existing slots' : 'fresh slots', tone: 'gray' });
+    } else if ((mm = token.match(/^distinct_senders_(True|False)$/))) {
+      params.push({ label: mm[1] === 'True' ? 'distinct senders' : 'same sender', tone: 'gray' });
+    } else {
+      params.push({ label: token, tone: 'gray' });
+    }
+  }
+  return {
+    file,
+    func,
+    fileLabel: file.replace(/^test_/, '').replace(/\.py$/, ''),
+    funcLabel: func.replace(/^test_/, ''),
+    params,
+  };
+}
+
+const PILL_TONES = {
+  emerald: 'border-emerald-800 bg-emerald-950/50 text-emerald-300',
+  sky: 'border-sky-800 bg-sky-950/50 text-sky-300',
+  amber: 'border-amber-800 bg-amber-950/50 text-amber-300',
+  violet: 'border-violet-800 bg-violet-950/50 text-violet-300',
+  slate: 'border-slate-700 bg-slate-900/60 text-slate-300',
+  gray: 'border-gray-700 bg-gray-800/50 text-gray-400',
+};
+
+function pillClassForTone(tone) {
+  const base = PILL_TONES[tone] || PILL_TONES.gray;
+  return `rounded-xs border px-1.5 py-0.5 text-xs font-medium ${base}`;
+}
+
+function makeTestCellContent(testName, showRaw) {
+  const icon = makeChartIcon();
+  if (showRaw) {
+    const inner = document.createElement('div');
+    inner.className = 'flex items-start gap-1.5';
+    const nameSpan = document.createElement('span');
+    nameSpan.className = 'break-all font-mono';
+    nameSpan.textContent = displayTestName(testName);
+    inner.append(icon, nameSpan);
+    return inner;
+  }
+  const parsed = parseTestName(testName);
+  const wrap = document.createElement('div');
+  wrap.className = 'flex flex-col gap-1';
+  const line1 = document.createElement('div');
+  line1.className = 'flex items-center gap-2';
+  line1.appendChild(icon);
+  const funcSpan = document.createElement('span');
+  funcSpan.className = 'font-mono text-sm font-semibold text-gray-100';
+  funcSpan.textContent = parsed.funcLabel || parsed.raw || displayTestName(testName);
+  line1.appendChild(funcSpan);
+  if (parsed.fileLabel) {
+    const fileSpan = document.createElement('span');
+    fileSpan.className = 'font-mono text-xs text-gray-500';
+    fileSpan.textContent = parsed.fileLabel;
+    line1.appendChild(fileSpan);
+  }
+  wrap.appendChild(line1);
+  if (parsed.params && parsed.params.length) {
+    const paramsRow = document.createElement('div');
+    paramsRow.className = 'flex flex-wrap gap-1';
+    for (const p of parsed.params) {
+      const pill = document.createElement('span');
+      pill.className = pillClassForTone(p.tone);
+      pill.textContent = p.label;
+      paramsRow.appendChild(pill);
+    }
+    wrap.appendChild(paramsRow);
+  }
+  return wrap;
+}
+
 function makeChartIcon() {
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   svg.setAttribute('viewBox', '0 0 20 20');
@@ -244,14 +337,9 @@ function makeRow(entry, { info, comparison, isSlowest }) {
   }
 
   const tdTest = document.createElement('td');
-  tdTest.className = 'px-3 py-2 font-mono text-xs text-gray-300';
-  const inner = document.createElement('div');
-  inner.className = 'flex items-start gap-1.5';
-  const nameSpan = document.createElement('span');
-  nameSpan.className = 'break-all';
-  nameSpan.textContent = displayTestName(entry.test);
-  inner.append(makeChartIcon(), nameSpan);
-  tdTest.appendChild(inner);
+  tdTest.className = 'px-3 py-2 text-xs text-gray-300';
+  const showRaw = document.getElementById('raw-names-toggle').checked;
+  tdTest.appendChild(makeTestCellContent(entry.test, showRaw));
   tr.appendChild(tdTest);
 
   const present = info.columns.map((c) => entry.aggs[c]).filter((v) => v != null);
@@ -829,6 +917,7 @@ function init() {
   clientSel.addEventListener('change', () => selectClient(clientSel.value));
   document.getElementById('method').addEventListener('change', render);
   document.getElementById('comparison').addEventListener('change', render);
+  document.getElementById('raw-names-toggle').addEventListener('change', render);
   for (const btn of document.querySelectorAll('.tab')) {
     btn.addEventListener('click', () => setTab(btn.dataset.tab));
   }
