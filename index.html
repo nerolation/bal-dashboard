@@ -28,6 +28,15 @@
       </div>
     </div>
 
+    <div class="mt-4 rounded-xs border border-gray-800 bg-gray-900/40 px-4 py-3 text-xs/5 text-gray-300">
+      <div class="text-gray-400">What the modes mean:</div>
+      <ul class="mt-1 space-y-0.5">
+        <li><span class="font-semibold text-gray-100">sequential</span> — clients as of today (sequential execution, no BALs).</li>
+        <li><span class="font-semibold text-gray-100">No Batch I/O</span> — parallel execution, but no batch I/O (BALs without state locations).</li>
+        <li><span class="font-semibold text-gray-100">full</span> — parallel execution + batch I/O (BALs with state locations).</li>
+      </ul>
+    </div>
+
     <div class="mt-4 flex flex-wrap items-end gap-4">
       <label class="flex flex-col gap-1 text-xs text-gray-400">
         Client
@@ -45,7 +54,7 @@
       <label class="flex flex-col gap-1 text-xs text-gray-400">
         Comparison
         <select id="comparison" class="rounded-xs border border-gray-700 bg-gray-900 px-2 py-1 text-sm text-gray-100">
-          <option value="full-vs-nobatchio" selected>full vs nobatchio</option>
+          <option value="full-vs-nobatchio" selected>full vs No Batch I/O</option>
           <option value="full-vs-sequential">full vs sequential</option>
         </select>
       </label>
@@ -72,7 +81,7 @@
       <button data-tab="slowest-5" class="tab -mb-px border-b-2 border-transparent px-4 py-2 text-sm font-medium text-gray-400 hover:text-gray-200">Slowest 5</button>
       <button data-tab="slowest-10" class="tab -mb-px border-b-2 border-transparent px-4 py-2 text-sm font-medium text-gray-400 hover:text-gray-200">Slowest 10</button>
       <button data-tab="slowest-20" class="tab -mb-px border-b-2 border-transparent px-4 py-2 text-sm font-medium text-gray-400 hover:text-gray-200">Slowest 20</button>
-      <button data-tab="clients-full" class="tab -mb-px border-b-2 border-transparent px-4 py-2 text-sm font-medium text-gray-400 hover:text-gray-200">Clients (full)</button>
+      <button data-tab="clients-full" class="tab -mb-px border-b-2 border-transparent px-4 py-2 text-sm font-medium text-gray-400 hover:text-gray-200">Clients (All BAL optimizations)</button>
     </div>
 
     <div id="gain-summary" class="mt-4 rounded-xs border border-gray-800 bg-gray-900/40 px-4 py-3 text-sm text-gray-300">
@@ -90,7 +99,7 @@
 
     <p class="mt-3 text-xs text-gray-500">
       Green cell = highest MGas/s in the row. On mode tabs, the two compared columns are ringed and a Gain column shows (target − baseline) / baseline.
-      A <span class="bg-rose-950/40 px-1 text-rose-300">rose-tinted row</span> marks the slowest row — by min(nobatchio, full) on mode tabs, by min across clients on the <em>Clients (full)</em> tab.
+      A <span class="bg-rose-950/40 px-1 text-rose-300">rose-tinted row</span> marks the slowest row — by min(No Batch I/O, full) on mode tabs, by min across clients on the <em>Clients (All BAL optimizations)</em> tab.
       Click any row to plot MGas/s vs gas limit across modes and clients. Hover a cell for sample count (n).
     </p>
   </div>

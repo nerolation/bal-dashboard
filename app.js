@@ -22,6 +22,14 @@ function maskKey(key) {
 }
 
 const MODES = ['sequential', 'nobatchio', 'full'];
+const MODE_LABELS = {
+  sequential: 'sequential',
+  nobatchio: 'No Batch I/O',
+  full: 'full',
+};
+function modeLabel(mode) {
+  return MODE_LABELS[mode] || mode;
+}
 const CLIENTS = ['besu', 'geth', 'nethermind', 'erigon', 'reth'];
 
 const MODE_COLORS = {
@@ -328,7 +336,7 @@ function makeRow(entry, { info, comparison, isSlowest }) {
   const tr = document.createElement('tr');
   tr.className = 'group cursor-pointer border-b border-gray-800 hover:bg-gray-900/60';
   tr.addEventListener('click', () => showChart(entry.test));
-  const slowLabel = info.slowCols.join(' + ');
+  const slowLabel = info.slowCols.map((c) => (info.kind === 'modes' ? modeLabel(c) : c)).join(' + ');
   tr.title = isSlowest
     ? `Slowest row across ${slowLabel} — click for chart`
     : 'Click to chart MGas/s vs gas limit';
@@ -411,7 +419,7 @@ function renderHead(info) {
   for (const col of info.columns) {
     const th = document.createElement('th');
     th.className = 'px-3 py-2 text-right font-medium';
-    let label = col;
+    let label = info.kind === 'modes' ? modeLabel(col) : col;
     if (sortable && state.clientSort.column === col) {
       label += state.clientSort.direction === 'asc' ? ' ▲' : ' ▼';
     }
@@ -479,7 +487,7 @@ function renderGainSummary(entries, comparison) {
     }
   }
   if (!gains.length) {
-    el.textContent = `No tests have both ${comparison.target} and ${comparison.baseline} data.`;
+    el.textContent = `No tests have both ${modeLabel(comparison.target)} and ${modeLabel(comparison.baseline)} data.`;
     el.className = 'mt-4 rounded-xs border border-gray-800 bg-gray-900/40 px-4 py-3 text-sm text-gray-400';
     return;
   }
@@ -490,7 +498,7 @@ function renderGainSummary(entries, comparison) {
   const wins = gains.filter((g) => g > 0.02).length;
   const losses = gains.filter((g) => g < -0.02).length;
 
-  const label = `${comparison.target} vs ${comparison.baseline}`;
+  const label = `${modeLabel(comparison.target)} vs ${modeLabel(comparison.baseline)}`;
   const mainColor =
     meanGain > 0.02 ? 'text-emerald-300' : meanGain < -0.02 ? 'text-rose-300' : 'text-gray-200';
 
@@ -535,7 +543,7 @@ function render() {
 
   renderHead(info);
   if (info.showGain) {
-    document.getElementById('gain-header').textContent = `Gain (${comparison.target} vs ${comparison.baseline})`;
+    document.getElementById('gain-header').textContent = `Gain (${modeLabel(comparison.target)} vs ${modeLabel(comparison.baseline)})`;
   }
 
   let entries;
@@ -666,7 +674,7 @@ function lineChartOptions() {
 function renderClientChart(client, buckets, method) {
   const gasLimits = [...buckets.keys()].sort((a, b) => a - b);
   const datasets = MODES.map((mode) => ({
-    label: mode,
+    label: modeLabel(mode),
     data: gasLimits.map((g) => aggregate(buckets.get(g)[mode], method)),
     borderColor: MODE_COLORS[mode],
     backgroundColor: MODE_COLORS[mode],
