@@ -72,6 +72,22 @@ function extractFamilyKey(testName) {
   return testName.replace(/benchmark_\d+M/, 'benchmark_*M');
 }
 
+function displayTestName(name) {
+  return name.endsWith('.txt') ? name.slice(0, -4) : name;
+}
+
+function makeChartIcon() {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', '0 0 20 20');
+  svg.setAttribute('fill', 'currentColor');
+  svg.setAttribute('aria-hidden', 'true');
+  svg.classList.add('mt-0.5', 'size-3.5', 'shrink-0', 'text-gray-500', 'group-hover:text-emerald-400');
+  const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  path.setAttribute('d', 'M3 17h2v-6H3v6zm4 0h2V9H7v8zm4 0h2V5h-2v12zm4 0h2v-9h-2v9z');
+  svg.appendChild(path);
+  return svg;
+}
+
 async function fetchAll(client) {
   const all = [];
   let offset = 0;
@@ -164,16 +180,24 @@ function findSlowestEntry(entries) {
 
 function makeRow(entry, comparison, isSlowest) {
   const tr = document.createElement('tr');
-  tr.className = 'cursor-pointer border-b border-gray-800 hover:bg-gray-900/60';
+  tr.className = 'group cursor-pointer border-b border-gray-800 hover:bg-gray-900/60';
   tr.addEventListener('click', () => showChart(entry.test));
+  tr.title = isSlowest
+    ? 'Slowest row across nobatchio + full — click for chart'
+    : 'Click to chart MGas/s vs gas limit';
   if (isSlowest) {
     tr.classList.add('bg-rose-950/40', 'border-l-2', 'border-l-rose-500');
-    tr.title = 'Slowest row across nobatchio + full — click for chart';
   }
 
   const tdTest = document.createElement('td');
-  tdTest.className = 'px-3 py-2 font-mono text-xs break-all text-gray-300';
-  tdTest.textContent = entry.test;
+  tdTest.className = 'px-3 py-2 font-mono text-xs text-gray-300';
+  const inner = document.createElement('div');
+  inner.className = 'flex items-start gap-1.5';
+  const nameSpan = document.createElement('span');
+  nameSpan.className = 'break-all';
+  nameSpan.textContent = displayTestName(entry.test);
+  inner.append(makeChartIcon(), nameSpan);
+  tdTest.appendChild(inner);
   tr.appendChild(tdTest);
 
   const present = MODES.map((m) => entry.aggs[m]).filter((v) => v != null);
@@ -510,7 +534,7 @@ function showChart(testName) {
     container.appendChild(p);
   }
 
-  document.getElementById('chart-title').textContent = familyKey;
+  document.getElementById('chart-title').textContent = displayTestName(familyKey);
   document.getElementById('chart-note').textContent = presentClients.length
     ? `${presentClients.join(', ')} · ${totalVariants} variants · ${totalSamples} samples · aggregation: ${method}`
     : '';
