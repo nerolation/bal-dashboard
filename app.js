@@ -47,6 +47,7 @@ const state = {
   client: null,
   tab: 'all',
   disabledGasLimits: new Set(),
+  clientSort: { column: null, direction: null },
 };
 
 function extractGasLimit(testName) {
@@ -295,6 +296,20 @@ function makeRow(entry, { info, comparison, isSlowest }) {
   return tr;
 }
 
+function cycleClientSort(col) {
+  const s = state.clientSort;
+  if (s.column !== col) {
+    s.column = col;
+    s.direction = 'asc';
+  } else if (s.direction === 'asc') {
+    s.direction = 'desc';
+  } else {
+    s.column = null;
+    s.direction = null;
+  }
+  render();
+}
+
 function renderHead(info) {
   const tr = document.getElementById('head-row');
   tr.replaceChildren();
@@ -302,10 +317,20 @@ function renderHead(info) {
   testTh.className = 'px-3 py-2 text-left font-medium';
   testTh.textContent = 'Test';
   tr.appendChild(testTh);
+  const sortable = info.kind === 'clients';
   for (const col of info.columns) {
     const th = document.createElement('th');
     th.className = 'px-3 py-2 text-right font-medium';
-    th.textContent = col;
+    let label = col;
+    if (sortable && state.clientSort.column === col) {
+      label += state.clientSort.direction === 'asc' ? ' ▲' : ' ▼';
+    }
+    th.textContent = label;
+    if (sortable) {
+      th.classList.add('cursor-pointer', 'select-none', 'hover:text-gray-200');
+      th.title = 'Click to sort ascending · click again for descending · once more to clear';
+      th.addEventListener('click', () => cycleClientSort(col));
+    }
     tr.appendChild(th);
   }
   if (info.showGain) {
@@ -436,6 +461,18 @@ function render() {
       .filter((e) => e.aggs[comparison.baseline] != null)
       .sort((a, b) => a.aggs[comparison.baseline] - b.aggs[comparison.baseline])
       .slice(0, info.slowestN);
+  } else if (info.kind === 'clients' && state.clientSort.column) {
+    const col = state.clientSort.column;
+    const dir = state.clientSort.direction === 'desc' ? -1 : 1;
+    displayed = [...entries].sort((a, b) => {
+      const av = a.aggs[col];
+      const bv = b.aggs[col];
+      if (av == null && bv == null) return compareBySortKey(a, b);
+      if (av == null) return 1;
+      if (bv == null) return -1;
+      if (av === bv) return compareBySortKey(a, b);
+      return (av - bv) * dir;
+    });
   } else {
     displayed = [...entries].sort(compareBySortKey);
   }
