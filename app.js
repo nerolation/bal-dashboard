@@ -54,11 +54,104 @@ const COMPARISONS = {
 const state = {
   rowsByClient: {},
   rows: [],
+  runs: [],
   client: null,
   tab: 'all',
   disabledGasLimits: new Set(),
   clientSort: { column: null, direction: null },
 };
+
+function branchFromImage(image) {
+  if (!image) return '';
+  const idx = image.lastIndexOf(':');
+  return idx > 0 ? image.slice(idx + 1) : image;
+}
+
+function formatIndexedAt(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleString(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZoneName: 'short',
+  });
+}
+
+function computeClientVersions() {
+  const map = new Map();
+  for (const run of state.runs || []) {
+    const client = run.client;
+    const image = run.image;
+    if (!client || !image) continue;
+    const key = `${client}|${image}`;
+    const iso = run.indexed_at || '';
+    const existing = map.get(key);
+    if (!existing || iso > existing.indexed_at) {
+      map.set(key, { client, image, indexed_at: iso });
+    }
+  }
+  return [...map.values()].sort(
+    (a, b) => a.client.localeCompare(b.client) || a.image.localeCompare(b.image),
+  );
+}
+
+function openVersionsModal() {
+  const body = document.getElementById('versions-body');
+  body.replaceChildren();
+  const rows = computeClientVersions();
+  if (!rows.length) {
+    const msg = document.createElement('div');
+    msg.className = 'text-xs text-gray-400';
+    msg.textContent = state.runs && state.runs.length
+      ? 'No run metadata for this suite.'
+      : 'Runs not loaded yet — try again in a moment (or check the API key).';
+    body.appendChild(msg);
+  } else {
+    const table = document.createElement('table');
+    table.className = 'w-full text-xs';
+    const thead = document.createElement('thead');
+    thead.className = 'text-gray-400 uppercase';
+    const htr = document.createElement('tr');
+    for (const label of ['Client', 'Branch / tag', 'Image', 'Indexed at']) {
+      const th = document.createElement('th');
+      th.className = 'border-b border-gray-800 px-2 py-1.5 text-left font-medium';
+      th.textContent = label;
+      htr.appendChild(th);
+    }
+    thead.appendChild(htr);
+    table.appendChild(thead);
+    const tbody = document.createElement('tbody');
+    for (const r of rows) {
+      const tr = document.createElement('tr');
+      tr.className = 'border-b border-gray-900/80';
+      const addCell = (content, extra = '') => {
+        const td = document.createElement('td');
+        td.className = `px-2 py-1.5 align-top ${extra}`;
+        if (typeof content === 'string') td.textContent = content;
+        else td.appendChild(content);
+        tr.appendChild(td);
+      };
+      const clientPill = document.createElement('span');
+      clientPill.className = 'rounded-xs border px-1.5 py-0.5 font-semibold ' + (
+        PILL_TONES.slate
+      );
+      clientPill.style.color = CLIENT_COLORS[r.client] || '#d1d5db';
+      clientPill.textContent = r.client;
+      addCell(clientPill);
+      addCell(branchFromImage(r.image), 'font-mono text-emerald-300');
+      addCell(r.image, 'font-mono break-all text-gray-400');
+      addCell(formatIndexedAt(r.indexed_at), 'whitespace-nowrap text-gray-400');
+      tbody.appendChild(tr);
+    }
+    table.appendChild(tbody);
+    body.appendChild(table);
+  }
+  document.getElementById('versions-modal').showModal();
+}
 
 function extractGasLimit(testName) {
   const m = testName.match(/benchmark_(\d+)M/);
@@ -205,6 +298,25 @@ async function fetchAll(client) {
       err.code = 'UNAUTHORIZED';
       throw err;
     }
+    if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
+    const json = await res.json();
+    const rows = json.data || [];
+    all.push(...rows);
+    if (rows.length < CONFIG.PAGE_SIZE) break;
+    offset += CONFIG.PAGE_SIZE;
+  }
+  return all;
+}
+
+async function fetchRuns() {
+  const all = [];
+  let offset = 0;
+  const base = CONFIG.BASE_URL.replace(/\/test_stats$/, '/runs');
+  while (true) {
+    const url = `${base}?suite_hash=eq.${CONFIG.SUITE_HASH}&select=client,instance_id,image,indexed_at,timestamp,status,tests_total,tests_passed,tests_failed&limit=${CONFIG.PAGE_SIZE}&offset=${offset}`;
+    const res = await fetch(url, {
+      headers: { Authorization: `Bearer ${getApiKey()}` },
+    });
     if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
     const json = await res.json();
     const rows = json.data || [];
@@ -859,14 +971,21 @@ async function reloadAll() {
   }
   status.textContent = 'loading…';
   status.className = 'text-amber-400';
-  const results = await Promise.all(
-    CLIENTS.map((c) =>
-      fetchAll(c).then(
-        (rows) => ({ client: c, rows, error: null }),
-        (e) => ({ client: c, rows: [], error: e }),
+  const [results, runsResult] = await Promise.all([
+    Promise.all(
+      CLIENTS.map((c) =>
+        fetchAll(c).then(
+          (rows) => ({ client: c, rows, error: null }),
+          (e) => ({ client: c, rows: [], error: e }),
+        ),
       ),
     ),
-  );
+    fetchRuns().then(
+      (rows) => ({ rows, error: null }),
+      (e) => ({ rows: [], error: e }),
+    ),
+  ]);
+  state.runs = runsResult.rows || [];
   state.rowsByClient = {};
   const errors = [];
   for (const r of results) {
@@ -940,6 +1059,13 @@ function init() {
   document.getElementById('api-key-btn').addEventListener('click', () => openApiKeyModal());
   document.getElementById('api-key-form').addEventListener('submit', saveApiKeyFromForm);
   document.getElementById('api-key-cancel').addEventListener('click', closeApiKeyModal);
+
+  const versionsDlg = document.getElementById('versions-modal');
+  document.getElementById('versions-btn').addEventListener('click', openVersionsModal);
+  document.getElementById('versions-close').addEventListener('click', () => versionsDlg.close());
+  versionsDlg.addEventListener('click', (e) => {
+    if (e.target === versionsDlg) versionsDlg.close();
+  });
 
   setTab('all');
   reloadAll();

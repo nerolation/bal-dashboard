@@ -37,6 +37,12 @@
         </p>
       </div>
       <div class="flex shrink-0 items-center gap-2">
+        <button id="versions-btn" type="button" title="Client branches / versions"
+                class="flex size-8 items-center justify-center rounded-xs border border-gray-700 bg-gray-900 text-gray-300 hover:bg-gray-800 hover:text-gray-100">
+          <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" class="size-4">
+            <path fill-rule="evenodd" d="M11.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5zm-2.25.75a2.25 2.25 0 1 1 3 2.122V6A2.5 2.5 0 0 1 10 8.5H6a1 1 0 0 0-1 1v1.128a2.251 2.251 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.5 0v1.836A2.492 2.492 0 0 1 6 7h4a1 1 0 0 0 1-1v-.628A2.25 2.25 0 0 1 9.5 3.25zM4.25 12a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5zM3.5 3.25a.75.75 0 1 1 1.5 0 .75.75 0 0 1-1.5 0z" clip-rule="evenodd"/>
+          </svg>
+        </button>
         <a href="https://github.com/nerolation/bal-dashboard" target="_blank" rel="noopener noreferrer"
            title="View on GitHub"
            class="flex size-8 items-center justify-center rounded-xs border border-gray-700 bg-gray-900 text-gray-300 hover:bg-gray-800 hover:text-gray-100">
@@ -123,6 +129,21 @@
       Click any row to plot MGas/s vs gas limit across modes and clients. Hover a cell for sample count (n).
     </p>
   </div>
+
+  <dialog id="versions-modal" class="rounded-xs border border-gray-700 bg-gray-900 p-0 text-gray-200 backdrop:bg-black/60">
+    <div class="flex w-[min(95vw,42rem)] flex-col">
+      <div class="flex items-start justify-between gap-4 border-b border-gray-800 px-4 py-3">
+        <div>
+          <div class="text-sm font-semibold text-gray-100">Client branches / versions</div>
+          <div class="mt-0.5 text-xs text-gray-400">Docker images used in this benchmark suite.</div>
+        </div>
+        <button id="versions-close" type="button" class="shrink-0 rounded-xs border border-gray-700 bg-gray-800 px-2 py-1 text-xs text-gray-300 hover:bg-gray-700">Close</button>
+      </div>
+      <div class="max-h-[70vh] overflow-y-auto p-4">
+        <div id="versions-body" class="text-sm"></div>
+      </div>
+    </div>
+  </dialog>
 
   <dialog id="api-key-modal" class="rounded-xs border border-gray-700 bg-gray-900 p-0 text-gray-200 backdrop:bg-black/60">
     <form id="api-key-form" class="flex w-[min(95vw,28rem)] flex-col gap-3 p-5">
