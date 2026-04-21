@@ -115,22 +115,27 @@
       <button data-tab="slowest-10" class="tab -mb-px border-b-2 border-transparent px-4 py-2 text-sm font-medium text-gray-400 hover:text-gray-200">Slowest 10</button>
       <button data-tab="slowest-20" class="tab -mb-px border-b-2 border-transparent px-4 py-2 text-sm font-medium text-gray-400 hover:text-gray-200">Slowest 20</button>
       <button data-tab="clients-full" class="tab -mb-px border-b-2 border-transparent px-4 py-2 text-sm font-medium text-gray-400 hover:text-gray-200">Clients (All BAL optimizations)</button>
+      <button data-tab="leaderboard" class="tab -mb-px border-b-2 border-transparent px-4 py-2 text-sm font-medium text-gray-400 hover:text-gray-200">🏆 Leaderboard</button>
     </div>
 
     <div id="gain-summary" class="mt-4 rounded-xs border border-gray-800 bg-gray-900/40 px-4 py-3 text-sm text-gray-300">
       —
     </div>
 
-    <div class="mt-4 rounded-xs border border-gray-800">
-      <table class="w-full text-sm">
-        <thead class="text-xs text-gray-400 uppercase">
-          <tr id="head-row"></tr>
-        </thead>
-        <tbody id="results-body"></tbody>
-      </table>
+    <div id="table-section">
+      <div class="mt-4 rounded-xs border border-gray-800">
+        <table class="w-full text-sm">
+          <thead class="text-xs text-gray-400 uppercase">
+            <tr id="head-row"></tr>
+          </thead>
+          <tbody id="results-body"></tbody>
+        </table>
+      </div>
     </div>
 
-    <p class="mt-3 text-xs text-gray-500">
+    <section id="leaderboard-content" class="hidden"></section>
+
+    <p id="table-legend" class="mt-3 text-xs text-gray-500">
       Green cell = highest MGas/s in the row. On mode tabs, the two compared columns are ringed and a Gain column shows (target − baseline) / baseline.
       A <span class="bg-rose-950/40 px-1 text-rose-300">rose-tinted row</span> marks the slowest row — by min(No Batch I/O, Full) on mode tabs, by min across clients on the <em>Clients (All BAL optimizations)</em> tab.
       Click any row to plot MGas/s vs gas limit across modes and clients. Hover a cell for sample count (n).

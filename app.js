@@ -178,6 +178,82 @@ function extractFamilyKey(testName) {
   return testName.replace(/benchmark_\d+M/, 'benchmark_*M');
 }
 
+const EXECUTION_SPECS_REPO = 'https://github.com/ethereum/execution-specs';
+const EXECUTION_SPECS_BRANCH = 'forks/amsterdam';
+
+const TEST_FILE_PATHS = {
+  'test_block_access_lists_compute_then_sload.py':
+    'tests/benchmark/stateful/eip7928_block_level_access_lists/test_block_access_lists_compute_then_sload.py',
+  'test_block_access_lists_max_accounts.py':
+    'tests/benchmark/stateful/eip7928_block_level_access_lists/test_block_access_lists_max_accounts.py',
+  'test_block_access_lists_max_sloads.py':
+    'tests/benchmark/stateful/eip7928_block_level_access_lists/test_block_access_lists_max_sloads.py',
+  'test_block_access_lists_pointer_chase.py':
+    'tests/benchmark/stateful/eip7928_block_level_access_lists/test_block_access_lists_pointer_chase.py',
+  'test_single_opcode.py': 'tests/benchmark/stateful/bloatnet/test_single_opcode.py',
+  'test_multi_opcode.py': 'tests/benchmark/stateful/bloatnet/test_multi_opcode.py',
+  'test_transient_storage.py': 'tests/benchmark/stateful/bloatnet/test_transient_storage.py',
+  'test_create2_access.py': 'tests/benchmark/stateful/bloatnet/test_create2_access.py',
+  'test_extcodesize_bytecode_sizes.py':
+    'tests/benchmark/stateful/bloatnet/test_extcodesize_bytecode_sizes.py',
+  'test_account_query.py': 'tests/benchmark/stateful/bloatnet/test_account_query.py',
+};
+
+const TEST_FUNC_LINES = {
+  test_bal_compute_then_sload: 70,
+  test_bal_max_sloads: 64,
+  test_bal_max_account_access: 85,
+  test_bal_max_pointer_chase: 62,
+  test_sload_bloated: 198,
+  test_sload_bloated_prefetch_miss: 256,
+  test_sload_bloated_multi_contract: 416,
+  test_sstore_bloated: 579,
+  test_sload_erc20_generic: 665,
+  test_sstore_erc20_generic: 796,
+  test_sstore_variants: 1238,
+  test_tstore_unique_keys: 55,
+  test_tstore_same_key: 118,
+  test_bloatnet_balance_opcode: 69,
+  test_bloatnet_call_value_existing: 223,
+  test_bloatnet_call_value_new_account: 320,
+  test_mixed_sload_sstore: 415,
+  test_create2_immediate_access: 66,
+  test_extcodesize_bytecode_sizes: 173,
+  test_ext_account_query_warm: 65,
+};
+
+function testSourceUrl(testName) {
+  const parsed = parseTestName(testName);
+  if (!parsed.file || !parsed.func) return null;
+  const path = TEST_FILE_PATHS[parsed.file];
+  if (!path) return null;
+  const line = TEST_FUNC_LINES[parsed.func];
+  const frag = line ? `#L${line}` : '';
+  return `${EXECUTION_SPECS_REPO}/blob/${EXECUTION_SPECS_BRANCH}/${path}${frag}`;
+}
+
+function makeExternalLinkIcon(url, { title = 'Open test source on GitHub', size = 'size-3.5' } = {}) {
+  const a = document.createElement('a');
+  a.href = url;
+  a.target = '_blank';
+  a.rel = 'noopener noreferrer';
+  a.title = title;
+  a.className = `inline-flex shrink-0 items-center text-gray-500 hover:text-emerald-400 ${size}`;
+  a.addEventListener('click', (e) => e.stopPropagation());
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', '0 0 20 20');
+  svg.setAttribute('fill', 'currentColor');
+  svg.setAttribute('aria-hidden', 'true');
+  svg.classList.add('size-3.5');
+  const p1 = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  p1.setAttribute('d', 'M11 3a1 1 0 1 0 0 2h3.586L8.293 11.293a1 1 0 1 0 1.414 1.414L16 6.414V10a1 1 0 1 0 2 0V4a1 1 0 0 0-1-1h-6z');
+  const p2 = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  p2.setAttribute('d', 'M5 5a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2v-3a1 1 0 0 0-2 0v3H5V7h3a1 1 0 0 0 0-2H5z');
+  svg.append(p1, p2);
+  a.appendChild(svg);
+  return a;
+}
+
 function displayTestName(name) {
   return name.endsWith('.txt') ? name.slice(0, -4) : name;
 }
@@ -235,6 +311,7 @@ function pillClassForTone(tone) {
 
 function makeTestCellContent(testName, showRaw) {
   const icon = makeChartIcon();
+  const sourceUrl = testSourceUrl(testName);
   if (showRaw) {
     const inner = document.createElement('div');
     inner.className = 'flex items-start gap-1.5';
@@ -242,6 +319,7 @@ function makeTestCellContent(testName, showRaw) {
     nameSpan.className = 'break-all font-mono';
     nameSpan.textContent = displayTestName(testName);
     inner.append(icon, nameSpan);
+    if (sourceUrl) inner.appendChild(makeExternalLinkIcon(sourceUrl));
     return inner;
   }
   const parsed = parseTestName(testName);
@@ -260,6 +338,7 @@ function makeTestCellContent(testName, showRaw) {
     fileSpan.textContent = parsed.fileLabel;
     line1.appendChild(fileSpan);
   }
+  if (sourceUrl) line1.appendChild(makeExternalLinkIcon(sourceUrl));
   wrap.appendChild(line1);
   if (parsed.params && parsed.params.length) {
     const paramsRow = document.createElement('div');
@@ -474,6 +553,9 @@ function buildClientFullEntries(method) {
 }
 
 function tabInfo() {
+  if (state.tab === 'leaderboard') {
+    return { kind: 'leaderboard' };
+  }
   if (state.tab === 'clients-full') {
     return {
       kind: 'clients',
@@ -727,6 +809,14 @@ function render() {
   const comparison = COMPARISONS[comparisonKey];
   const info = tabInfo();
 
+  if (info.kind === 'leaderboard') {
+    setLeaderboardVisibility(true);
+    renderLeaderboard();
+    document.getElementById('summary').textContent = '🏆 Leaderboard · Full mode only';
+    return;
+  }
+  setLeaderboardVisibility(false);
+
   renderHead(info);
   if (info.showGain) {
     const base = `Gain (${modeLabel(comparison.target)} vs ${modeLabel(comparison.baseline)})`;
@@ -821,6 +911,334 @@ function setTab(tab) {
 }
 
 let chartInstances = [];
+let leaderboardChart = null;
+
+const LEADERBOARD_BADGES = [
+  { emoji: '🥇', glow: 'shadow-lg shadow-emerald-500/20' },
+  { emoji: '🥈', glow: 'shadow-md shadow-gray-500/10' },
+  { emoji: '🥉', glow: 'shadow-md shadow-amber-500/10' },
+  { emoji: '🎖️', glow: '' },
+  { emoji: '🏅', glow: '' },
+  { emoji: '🔹', glow: '' },
+];
+
+function leaderboardBadge(rank) {
+  return LEADERBOARD_BADGES[rank - 1] || { emoji: `#${rank}`, glow: '' };
+}
+
+function isTestNameEnabledByGas(testName) {
+  const gas = extractGasLimit(testName);
+  return !state.disabledGasLimits.has(gasLimitKey(gas));
+}
+
+function computeLeaderboard(method) {
+  const results = [];
+  for (const client of CLIENTS) {
+    const rows = state.rowsByClient[client] || [];
+    const perTest = new Map();
+    for (const row of rows) {
+      if (modeFromRunId(row.run_id) !== 'full') continue;
+      if (row.test_mgas_s == null || row.test_mgas_s <= 0) continue;
+      if (!isRowInTimeWindow(row)) continue;
+      if (!isTestNameEnabledByGas(row.test_name)) continue;
+      if (!perTest.has(row.test_name)) perTest.set(row.test_name, []);
+      perTest.get(row.test_name).push(row.test_mgas_s);
+    }
+    const tests = [];
+    for (const [test, vals] of perTest) {
+      const agg = aggregate(vals, method);
+      if (agg != null) tests.push({ test, mgas: agg, n: vals.length });
+    }
+    tests.sort((a, b) => a.mgas - b.mgas);
+    const worst10 = tests.slice(0, 10);
+    if (!worst10.length) continue;
+    const meanScore = worst10.reduce((s, t) => s + t.mgas, 0) / worst10.length;
+    const medianScore = aggregate(worst10.map((t) => t.mgas), 'median');
+    const worstTest = worst10[0];
+    results.push({
+      client,
+      worst10,
+      meanScore,
+      medianScore,
+      minScore: worstTest.mgas,
+      worstTest,
+      totalTests: tests.length,
+    });
+  }
+  results.sort((a, b) => b.meanScore - a.meanScore);
+  return results;
+}
+
+function makeLeaderboardHeader() {
+  const header = document.createElement('div');
+  header.className = 'mt-4';
+  const banner = document.createElement('div');
+  banner.className = 'flex flex-wrap items-baseline gap-3';
+  const h2 = document.createElement('h2');
+  h2.className = 'text-2xl font-bold text-gray-100';
+  h2.textContent = '🏆 Leaderboard';
+  banner.appendChild(h2);
+  const rule = document.createElement('span');
+  rule.className = 'rounded-xs border border-emerald-800 bg-emerald-950/60 px-2 py-0.5 text-xs font-semibold text-emerald-300';
+  rule.textContent = 'Full mode · 10 slowest tests per client';
+  banner.appendChild(rule);
+  header.appendChild(banner);
+  const sub = document.createElement('p');
+  sub.className = 'mt-2 text-sm/6 text-gray-400';
+  sub.innerHTML =
+    'Each client is scored on the <span class="font-semibold text-gray-200">mean MGas/s across its 10 slowest Full-mode tests</span>. ' +
+    'The gas-limit and runs-after filters apply.';
+  header.appendChild(sub);
+  return header;
+}
+
+function makeLeaderboardPodium(top) {
+  const grid = document.createElement('div');
+  grid.className = 'mt-6 grid gap-4 md:grid-cols-3';
+  const heights = ['md:order-2 md:-mt-4', 'md:order-1', 'md:order-3 md:mt-4'];
+  top.forEach((entry, idx) => {
+    const rank = idx + 1;
+    const badge = leaderboardBadge(rank);
+    const color = CLIENT_COLORS[entry.client] || '#e5e7eb';
+    const card = document.createElement('div');
+    card.className = `relative flex flex-col items-center gap-2 rounded-sm border border-gray-800 bg-gray-900/60 p-5 text-center ${badge.glow} ${heights[idx] || ''}`;
+    card.style.borderTop = `3px solid ${color}`;
+    const ribbon = document.createElement('div');
+    ribbon.className = 'text-5xl';
+    ribbon.textContent = badge.emoji;
+    card.appendChild(ribbon);
+    const client = document.createElement('div');
+    client.className = 'text-xl font-bold';
+    client.style.color = color;
+    client.textContent = entry.client;
+    card.appendChild(client);
+    const score = document.createElement('div');
+    score.className = 'flex items-baseline gap-1';
+    const scoreNum = document.createElement('span');
+    scoreNum.className = 'text-3xl font-bold tabular-nums text-gray-100';
+    scoreNum.textContent = entry.meanScore.toFixed(1);
+    const scoreUnit = document.createElement('span');
+    scoreUnit.className = 'text-xs text-gray-400';
+    scoreUnit.textContent = 'MGas/s';
+    score.append(scoreNum, scoreUnit);
+    card.appendChild(score);
+    const worst = document.createElement('div');
+    worst.className = 'mt-2 flex flex-wrap items-center justify-center gap-1 text-xs text-gray-500';
+    const wParsed = parseTestName(entry.worstTest.test);
+    const worstLabel = wParsed.funcLabel || displayTestName(entry.worstTest.test);
+    const labelSpan = document.createElement('span');
+    labelSpan.textContent = 'Slowest test: ';
+    const nameSpan = document.createElement('span');
+    nameSpan.className = 'font-mono text-rose-300';
+    nameSpan.textContent = worstLabel;
+    const scoreSpan = document.createElement('span');
+    scoreSpan.textContent = ` @ ${entry.worstTest.mgas.toFixed(1)} MGas/s`;
+    worst.append(labelSpan, nameSpan);
+    const worstUrl = testSourceUrl(entry.worstTest.test);
+    if (worstUrl) worst.appendChild(makeExternalLinkIcon(worstUrl));
+    worst.appendChild(scoreSpan);
+    card.appendChild(worst);
+    grid.appendChild(card);
+  });
+  return grid;
+}
+
+function makeLeaderboardChart(entries) {
+  const block = document.createElement('div');
+  block.className = 'mt-6 rounded-sm border border-gray-800 bg-gray-900/40 p-4';
+  const h3 = document.createElement('h3');
+  h3.className = 'text-sm font-semibold text-gray-200';
+  h3.textContent = 'Scoreboard — mean MGas/s of each client\'s 10 slowest tests';
+  block.appendChild(h3);
+  const wrap = document.createElement('div');
+  wrap.className = 'relative mt-3';
+  wrap.style.height = `${Math.max(180, entries.length * 44)}px`;
+  const canvas = document.createElement('canvas');
+  wrap.appendChild(canvas);
+  block.appendChild(wrap);
+  const labels = entries.map((e, i) => `${leaderboardBadge(i + 1).emoji}  ${e.client}`);
+  const values = entries.map((e) => e.meanScore);
+  const colors = entries.map((e) => CLIENT_COLORS[e.client] || '#94a3b8');
+  if (leaderboardChart) leaderboardChart.destroy();
+  leaderboardChart = new Chart(canvas, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        {
+          data: values,
+          backgroundColor: colors,
+          borderWidth: 0,
+          borderRadius: 4,
+        },
+      ],
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: {
+        x: {
+          beginAtZero: true,
+          ticks: { color: '#9ca3af' },
+          grid: { color: '#1f2937' },
+          title: { display: true, text: 'MGas/s', color: '#9ca3af' },
+        },
+        y: {
+          ticks: { color: '#e5e7eb', font: { weight: 'bold', size: 14 } },
+          grid: { display: false },
+        },
+      },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: '#111827',
+          borderColor: '#374151',
+          borderWidth: 1,
+          titleColor: '#f3f4f6',
+          bodyColor: '#d1d5db',
+          callbacks: {
+            label: (ctx) => `${ctx.parsed.x.toFixed(2)} MGas/s`,
+          },
+        },
+      },
+    },
+  });
+  return block;
+}
+
+function makeRemainingRanks(rest, offset) {
+  const block = document.createElement('div');
+  block.className = 'mt-6 flex flex-col gap-2';
+  rest.forEach((entry, idx) => {
+    const rank = offset + idx + 1;
+    const badge = leaderboardBadge(rank);
+    const color = CLIENT_COLORS[entry.client] || '#e5e7eb';
+    const row = document.createElement('div');
+    row.className = 'flex items-center gap-4 rounded-sm border border-gray-800 bg-gray-900/40 px-4 py-3';
+    row.style.borderLeft = `3px solid ${color}`;
+    const rankEl = document.createElement('div');
+    rankEl.className = 'text-2xl';
+    rankEl.textContent = badge.emoji;
+    row.appendChild(rankEl);
+    const info = document.createElement('div');
+    info.className = 'flex-1';
+    const client = document.createElement('div');
+    client.className = 'font-semibold';
+    client.style.color = color;
+    client.textContent = entry.client;
+    info.append(client);
+    row.appendChild(info);
+    const score = document.createElement('div');
+    score.className = 'text-right';
+    score.innerHTML = `<div class="text-lg font-bold tabular-nums text-gray-100">${entry.meanScore.toFixed(1)}</div><div class="text-xs text-gray-500">MGas/s</div>`;
+    row.appendChild(score);
+    block.appendChild(row);
+  });
+  return block;
+}
+
+function makeLeaderboardDrillDown(entries) {
+  const wrap = document.createElement('div');
+  wrap.className = 'mt-6 flex flex-col gap-3';
+  const title = document.createElement('h3');
+  title.className = 'text-sm font-semibold text-gray-200';
+  title.textContent = 'Each client\'s 10 slowest Full-mode tests';
+  wrap.appendChild(title);
+  entries.forEach((entry, idx) => {
+    const rank = idx + 1;
+    const badge = leaderboardBadge(rank);
+    const color = CLIENT_COLORS[entry.client] || '#e5e7eb';
+    const details = document.createElement('details');
+    details.className = 'overflow-hidden rounded-sm border border-gray-800 bg-gray-900/40';
+    if (rank === 1) details.open = true;
+    const summary = document.createElement('summary');
+    summary.className = 'flex cursor-pointer items-center gap-3 px-4 py-3 text-sm hover:bg-gray-900/80';
+    const badgeEl = document.createElement('span');
+    badgeEl.className = 'text-xl';
+    badgeEl.textContent = badge.emoji;
+    summary.appendChild(badgeEl);
+    const clientEl = document.createElement('span');
+    clientEl.className = 'font-semibold';
+    clientEl.style.color = color;
+    clientEl.textContent = entry.client;
+    summary.appendChild(clientEl);
+    const score = document.createElement('span');
+    score.className = 'ml-auto text-xs text-gray-400';
+    score.innerHTML = `mean <span class="font-semibold tabular-nums text-gray-100">${entry.meanScore.toFixed(1)}</span> · median <span class="tabular-nums text-gray-200">${entry.medianScore.toFixed(1)}</span> · min <span class="tabular-nums text-rose-300">${entry.minScore.toFixed(1)}</span> MGas/s`;
+    summary.appendChild(score);
+    details.appendChild(summary);
+    const listWrap = document.createElement('div');
+    listWrap.className = 'border-t border-gray-800 px-4 py-3';
+    const list = document.createElement('ol');
+    list.className = 'flex flex-col gap-1 text-xs';
+    entry.worst10.forEach((t, i) => {
+      const li = document.createElement('li');
+      li.className = 'flex items-center gap-3';
+      const num = document.createElement('span');
+      num.className = 'w-6 shrink-0 text-right tabular-nums text-gray-500';
+      num.textContent = `${i + 1}.`;
+      li.appendChild(num);
+      const parsed = parseTestName(t.test);
+      const name = document.createElement('span');
+      name.className = 'min-w-0 flex-1 truncate font-mono text-gray-300';
+      name.textContent = parsed.funcLabel ? `${parsed.funcLabel} [${parsed.fileLabel || ''}]` : displayTestName(t.test);
+      name.title = displayTestName(t.test);
+      li.appendChild(name);
+      const url = testSourceUrl(t.test);
+      if (url) li.appendChild(makeExternalLinkIcon(url));
+      const mgas = document.createElement('span');
+      mgas.className = 'tabular-nums text-rose-300';
+      mgas.textContent = `${t.mgas.toFixed(2)} MGas/s`;
+      li.appendChild(mgas);
+      const n = document.createElement('span');
+      n.className = 'w-10 shrink-0 text-right tabular-nums text-gray-500';
+      n.textContent = `n=${t.n}`;
+      li.appendChild(n);
+      list.appendChild(li);
+    });
+    listWrap.appendChild(list);
+    details.appendChild(listWrap);
+    wrap.appendChild(details);
+  });
+  return wrap;
+}
+
+function renderLeaderboard() {
+  const method = document.getElementById('method').value;
+  const container = document.getElementById('leaderboard-content');
+  container.replaceChildren();
+  if (leaderboardChart) {
+    leaderboardChart.destroy();
+    leaderboardChart = null;
+  }
+  const entries = computeLeaderboard(method);
+  container.appendChild(makeLeaderboardHeader());
+  if (!entries.length) {
+    const empty = document.createElement('p');
+    empty.className = 'mt-6 rounded-xs border border-gray-800 bg-gray-900/40 px-4 py-3 text-sm text-gray-400';
+    empty.textContent = 'No Full-mode data yet, or filters exclude everything. Adjust the gas-limit checkboxes or the Runs-from selector.';
+    container.appendChild(empty);
+    return;
+  }
+  container.appendChild(makeLeaderboardPodium(entries.slice(0, 3)));
+  if (entries.length > 3) {
+    container.appendChild(makeRemainingRanks(entries.slice(3), 3));
+  }
+  container.appendChild(makeLeaderboardChart(entries));
+  container.appendChild(makeLeaderboardDrillDown(entries));
+}
+
+function setLeaderboardVisibility(show) {
+  const leaderboardEl = document.getElementById('leaderboard-content');
+  const tableSection = document.getElementById('table-section');
+  const gainSummary = document.getElementById('gain-summary');
+  const legend = document.getElementById('table-legend');
+  leaderboardEl.classList.toggle('hidden', !show);
+  tableSection.classList.toggle('hidden', show);
+  gainSummary.classList.toggle('hidden', show);
+  legend.classList.toggle('hidden', show);
+}
 
 function buildFamilyBuckets(rows, familyKey) {
   const buckets = new Map();
