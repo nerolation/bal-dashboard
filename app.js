@@ -83,10 +83,12 @@ function formatIndexedAt(iso) {
 
 function computeClientVersions() {
   const map = new Map();
+  const min = minTimestampFilter();
   for (const run of state.runs || []) {
     const client = run.client;
     const image = run.image;
     if (!client || !image) continue;
+    if (min && run.timestamp && run.timestamp < min) continue;
     const key = `${client}|${image}`;
     const iso = run.indexed_at || '';
     const existing = map.get(key);
@@ -332,12 +334,77 @@ function modeFromRunId(runId) {
   return m ? m[1] : null;
 }
 
+function timestampFromRunId(runId) {
+  const m = runId.match(/^(\d+)_/);
+  return m ? parseInt(m[1], 10) : null;
+}
+
+function minTimestampFilter() {
+  const sel = document.getElementById('runs-after');
+  if (!sel) return 0;
+  const v = parseInt(sel.value, 10);
+  return Number.isFinite(v) ? v : 0;
+}
+
+function isRowInTimeWindow(row) {
+  const min = minTimestampFilter();
+  if (!min) return true;
+  const ts = timestampFromRunId(row.run_id);
+  return ts != null && ts >= min;
+}
+
+function hourBucket(ts) {
+  return Math.floor(ts / 3600) * 3600;
+}
+
+function formatHourOption(hourTs) {
+  const d = new Date(hourTs * 1000);
+  return d.toLocaleString(undefined, {
+    month: 'short',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+function renderRunsFilter() {
+  const sel = document.getElementById('runs-after');
+  if (!sel) return;
+  const prev = sel.value;
+  const hours = new Set();
+  for (const run of state.runs || []) {
+    if (run.timestamp) hours.add(hourBucket(run.timestamp));
+  }
+  for (const client of CLIENTS) {
+    for (const row of state.rowsByClient[client] || []) {
+      const ts = timestampFromRunId(row.run_id);
+      if (ts != null) hours.add(hourBucket(ts));
+    }
+  }
+  const sorted = [...hours].sort((a, b) => b - a);
+  sel.replaceChildren();
+  const allOpt = document.createElement('option');
+  allOpt.value = '0';
+  allOpt.textContent = 'All runs';
+  sel.appendChild(allOpt);
+  for (const h of sorted) {
+    const opt = document.createElement('option');
+    opt.value = String(h);
+    opt.textContent = formatHourOption(h);
+    sel.appendChild(opt);
+  }
+  if (prev && [...sel.options].some((o) => o.value === prev)) {
+    sel.value = prev;
+  }
+}
+
 function groupByTest(rows) {
   const groups = new Map();
   for (const row of rows) {
     const mode = modeFromRunId(row.run_id);
     if (!mode) continue;
     if (row.test_mgas_s == null || row.test_mgas_s <= 0) continue;
+    if (!isRowInTimeWindow(row)) continue;
     if (!groups.has(row.test_name)) {
       groups.set(row.test_name, { sequential: [], nobatchio: [], full: [] });
     }
@@ -383,6 +450,7 @@ function buildClientFullEntries(method) {
     for (const row of rows) {
       if (modeFromRunId(row.run_id) !== 'full') continue;
       if (row.test_mgas_s == null || row.test_mgas_s <= 0) continue;
+      if (!isRowInTimeWindow(row)) continue;
       let e = byTest.get(row.test_name);
       if (!e) {
         e = { test: row.test_name, aggs: {}, counts: {}, _raw: {} };
@@ -738,6 +806,7 @@ function buildFamilyBuckets(rows, familyKey) {
     const mode = modeFromRunId(row.run_id);
     if (!mode) continue;
     if (row.test_mgas_s == null || row.test_mgas_s <= 0) continue;
+    if (!isRowInTimeWindow(row)) continue;
     const gas = extractGasLimit(row.test_name);
     if (gas == null) continue;
     if (!buckets.has(gas)) buckets.set(gas, { sequential: [], nobatchio: [], full: [] });
@@ -818,6 +887,7 @@ function renderFullAcrossClientsChart(familyKey, method) {
       if (extractFamilyKey(row.test_name) !== familyKey) continue;
       if (modeFromRunId(row.run_id) !== 'full') continue;
       if (row.test_mgas_s == null || row.test_mgas_s <= 0) continue;
+      if (!isRowInTimeWindow(row)) continue;
       const gas = extractGasLimit(row.test_name);
       if (gas == null) continue;
       if (!bucket.has(gas)) bucket.set(gas, []);
@@ -1004,6 +1074,7 @@ async function reloadAll() {
     : `ok · ${CLIENTS.length} clients loaded`;
   status.className = errors.length ? 'text-amber-400' : 'text-emerald-400';
   renderGasLimitFilters();
+  renderRunsFilter();
   selectClient(document.getElementById('client').value);
 }
 
@@ -1047,6 +1118,7 @@ function init() {
   document.getElementById('method').addEventListener('change', render);
   document.getElementById('comparison').addEventListener('change', render);
   document.getElementById('raw-names-toggle').addEventListener('change', render);
+  document.getElementById('runs-after').addEventListener('change', render);
   for (const btn of document.querySelectorAll('.tab')) {
     btn.addEventListener('click', () => setTab(btn.dataset.tab));
   }
