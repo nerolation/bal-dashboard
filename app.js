@@ -58,7 +58,7 @@ const state = {
   client: null,
   tab: 'all',
   disabledGasLimits: new Set(),
-  clientSort: { column: null, direction: null },
+  columnSort: { column: null, direction: null },
 };
 
 function branchFromImage(image) {
@@ -574,8 +574,8 @@ function makeRow(entry, { info, comparison, isSlowest }) {
   return tr;
 }
 
-function cycleClientSort(col) {
-  const s = state.clientSort;
+function cycleColumnSort(col) {
+  const s = state.columnSort;
   if (s.column !== col) {
     s.column = col;
     s.direction = 'asc';
@@ -597,26 +597,30 @@ function renderHead(info) {
   testTh.className = `${stickyBase} text-left`;
   testTh.textContent = 'Test';
   tr.appendChild(testTh);
-  const sortable = info.kind === 'clients';
   for (const col of info.columns) {
     const th = document.createElement('th');
     th.className = `${stickyBase} text-right`;
     let label = info.kind === 'modes' ? modeLabel(col) : col;
-    if (sortable && state.clientSort.column === col) {
-      label += state.clientSort.direction === 'asc' ? ' ▲' : ' ▼';
+    if (state.columnSort.column === col) {
+      label += state.columnSort.direction === 'asc' ? ' ▲' : ' ▼';
     }
     th.textContent = label;
-    if (sortable) {
-      th.classList.add('cursor-pointer', 'select-none', 'hover:text-gray-200');
-      th.title = 'Click to sort ascending · click again for descending · once more to clear';
-      th.addEventListener('click', () => cycleClientSort(col));
-    }
+    th.classList.add('cursor-pointer', 'select-none', 'hover:text-gray-200');
+    th.title = 'Click to sort ascending · click again for descending · once more to clear';
+    th.addEventListener('click', () => cycleColumnSort(col));
     tr.appendChild(th);
   }
   if (info.showGain) {
     const gainTh = document.createElement('th');
     gainTh.id = 'gain-header';
     gainTh.className = `${stickyBase} text-right`;
+    const gainKey = '__gain__';
+    if (state.columnSort.column === gainKey) {
+      gainTh.dataset.sort = state.columnSort.direction;
+    }
+    gainTh.classList.add('cursor-pointer', 'select-none', 'hover:text-gray-200');
+    gainTh.title = 'Click to sort ascending · click again for descending · once more to clear';
+    gainTh.addEventListener('click', () => cycleColumnSort(gainKey));
     tr.appendChild(gainTh);
   }
 }
@@ -725,7 +729,11 @@ function render() {
 
   renderHead(info);
   if (info.showGain) {
-    document.getElementById('gain-header').textContent = `Gain (${modeLabel(comparison.target)} vs ${modeLabel(comparison.baseline)})`;
+    const base = `Gain (${modeLabel(comparison.target)} vs ${modeLabel(comparison.baseline)})`;
+    const arrow = state.columnSort.column === '__gain__'
+      ? (state.columnSort.direction === 'asc' ? ' ▲' : ' ▼')
+      : '';
+    document.getElementById('gain-header').textContent = base + arrow;
   }
 
   let entries;
@@ -735,24 +743,41 @@ function render() {
     entries = buildEntries(method).filter(isEntryEnabled);
   }
 
-  let displayed;
-  if (info.kind === 'modes' && info.slowestN != null) {
-    displayed = entries
-      .filter((e) => e.aggs[comparison.baseline] != null)
-      .sort((a, b) => a.aggs[comparison.baseline] - b.aggs[comparison.baseline])
-      .slice(0, info.slowestN);
-  } else if (info.kind === 'clients' && state.clientSort.column) {
-    const col = state.clientSort.column;
-    const dir = state.clientSort.direction === 'desc' ? -1 : 1;
-    displayed = [...entries].sort((a, b) => {
-      const av = a.aggs[col];
-      const bv = b.aggs[col];
+  const activeSort = state.columnSort.column;
+  const sortableKeys = new Set(info.columns);
+  if (info.showGain) sortableKeys.add('__gain__');
+  const sortActive = activeSort && sortableKeys.has(activeSort);
+
+  const gainValue = (entry) => {
+    const b = entry.aggs[comparison.baseline];
+    const t = entry.aggs[comparison.target];
+    if (b == null || t == null || b <= 0) return null;
+    return (t - b) / b;
+  };
+
+  const sortByActive = (arr) => {
+    const dir = state.columnSort.direction === 'desc' ? -1 : 1;
+    const getVal = activeSort === '__gain__' ? gainValue : (e) => e.aggs[activeSort];
+    return [...arr].sort((a, b) => {
+      const av = getVal(a);
+      const bv = getVal(b);
       if (av == null && bv == null) return compareBySortKey(a, b);
       if (av == null) return 1;
       if (bv == null) return -1;
       if (av === bv) return compareBySortKey(a, b);
       return (av - bv) * dir;
     });
+  };
+
+  let displayed;
+  if (info.kind === 'modes' && info.slowestN != null) {
+    displayed = entries
+      .filter((e) => e.aggs[comparison.baseline] != null)
+      .sort((a, b) => a.aggs[comparison.baseline] - b.aggs[comparison.baseline])
+      .slice(0, info.slowestN);
+    if (sortActive) displayed = sortByActive(displayed);
+  } else if (sortActive) {
+    displayed = sortByActive(entries);
   } else {
     displayed = [...entries].sort(compareBySortKey);
   }
