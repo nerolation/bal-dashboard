@@ -137,6 +137,7 @@
 
     <p id="table-legend" class="mt-3 text-xs text-gray-500">
       Green cell = highest MGas/s in the row. On mode tabs, the two compared columns are ringed and a Gain column shows (target − baseline) / baseline.
+      On the <em>Clients</em> tab, the summary card shows each client's <strong>median CoV</strong> across tests — a flakiness score computed from each client's repeated runs of the same test. Client headers show the number of runs in parentheses; hover any cell to see the per-test σ and CoV. An amber ⚠ icon next to a value flags cells with CoV ≥ 20% (above the global p90).
       A <span class="bg-rose-950/40 px-1 text-rose-300">rose-tinted row</span> marks the slowest row — by min(No Batch I/O, Full) on mode tabs, by min across clients on the <em>Clients (All BAL optimizations)</em> tab.
       Click any row to plot MGas/s vs gas limit across modes and clients. Hover a cell for sample count (n).
     </p>

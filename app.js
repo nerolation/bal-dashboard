@@ -432,6 +432,59 @@ function isRowInTimeWindow(row) {
   return ts != null && ts >= min;
 }
 
+function successfulRunsForClientMode(client, mode) {
+  const set = new Set();
+  for (const row of state.rowsByClient[client] || []) {
+    if (!isRowInTimeWindow(row)) continue;
+    if (row.test_mgas_s == null || row.test_mgas_s <= 0) continue;
+    if (mode && modeFromRunId(row.run_id) !== mode) continue;
+    set.add(row.run_id);
+  }
+  return set.size;
+}
+
+function successfulRunsByClient(modeFilter = null) {
+  const map = {};
+  for (const client of CLIENTS) {
+    map[client] = successfulRunsForClientMode(client, modeFilter);
+  }
+  return map;
+}
+
+const HIGH_COV_THRESHOLD = 0.2;
+
+function makeHighVarianceIcon(cov) {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', '0 0 20 20');
+  svg.setAttribute('fill', 'currentColor');
+  svg.setAttribute('aria-hidden', 'true');
+  svg.classList.add('ml-1', 'inline-block', 'size-3.5', 'text-amber-400', 'align-text-bottom');
+  const p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  p.setAttribute('fill-rule', 'evenodd');
+  p.setAttribute('clip-rule', 'evenodd');
+  p.setAttribute(
+    'd',
+    'M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 6a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-1.5 0v-3.5A.75.75 0 0 1 10 6zm0 9a1 1 0 1 0 0-2 1 1 0 0 0 0 2z',
+  );
+  svg.appendChild(p);
+  const title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+  title.textContent = `High run-to-run variance · CoV ${(cov * 100).toFixed(1)}% (≥ ${(HIGH_COV_THRESHOLD * 100).toFixed(0)}%)`;
+  svg.appendChild(title);
+  return svg;
+}
+
+function computeStats(values, method) {
+  const n = values.length;
+  if (n === 0) return { value: null, n: 0, std: null, cov: null };
+  const value = aggregate(values, method);
+  if (n < 2) return { value, n, std: null, cov: null };
+  const mean = values.reduce((a, b) => a + b, 0) / n;
+  const sumSq = values.reduce((s, v) => s + (v - mean) ** 2, 0);
+  const std = Math.sqrt(sumSq / n);
+  const cov = mean > 0 ? std / mean : null;
+  return { value, n, std, cov };
+}
+
 function hourBucket(ts) {
   return Math.floor(ts / 3600) * 3600;
 }
@@ -513,11 +566,16 @@ function buildEntries(method) {
   for (const [test, g] of groups.entries()) {
     const aggs = {};
     const counts = {};
+    const stds = {};
+    const covs = {};
     for (const mode of MODES) {
-      aggs[mode] = aggregate(g[mode], method);
-      counts[mode] = g[mode].length;
+      const s = computeStats(g[mode], method);
+      aggs[mode] = s.value;
+      counts[mode] = s.n;
+      stds[mode] = s.std;
+      covs[mode] = s.cov;
     }
-    entries.push({ test, aggs, counts });
+    entries.push({ test, aggs, counts, stds, covs });
   }
   return entries;
 }
@@ -545,7 +603,15 @@ function buildClientFullEntries(method) {
   }
   const entries = [];
   for (const e of byTest.values()) {
-    for (const c of CLIENTS) e.aggs[c] = aggregate(e._raw[c], method);
+    e.stds = {};
+    e.covs = {};
+    for (const c of CLIENTS) {
+      const s = computeStats(e._raw[c], method);
+      e.aggs[c] = s.value;
+      e.counts[c] = s.n;
+      e.stds[c] = s.std;
+      e.covs[c] = s.cov;
+    }
     delete e._raw;
     entries.push(e);
   }
@@ -623,8 +689,21 @@ function makeRow(entry, { info, comparison, isSlowest }) {
       td.textContent = '—';
       td.classList.add('text-gray-600');
     } else {
-      td.textContent = v.toFixed(2);
-      td.title = `n=${entry.counts[col]}`;
+      const n = entry.counts[col];
+      const std = entry.stds?.[col];
+      const cov = entry.covs?.[col];
+      const valueSpan = document.createElement('span');
+      valueSpan.textContent = v.toFixed(2);
+      td.appendChild(valueSpan);
+      if (cov != null && cov >= HIGH_COV_THRESHOLD) {
+        td.appendChild(makeHighVarianceIcon(cov));
+      }
+      let title = `n=${n} run${n === 1 ? '' : 's'}`;
+      if (std != null) {
+        title += ` · σ=${std.toFixed(2)} MGas/s`;
+        if (cov != null) title += ` · CoV=${(cov * 100).toFixed(1)}%`;
+      }
+      td.title = title;
       if (best != null && v === best) {
         td.classList.add('bg-emerald-900/40', 'text-emerald-300', 'font-semibold');
       }
@@ -679,16 +758,27 @@ function renderHead(info) {
   testTh.className = `${stickyBase} text-left`;
   testTh.textContent = 'Test';
   tr.appendChild(testTh);
+  const clientRunCounts = info.kind === 'clients' ? successfulRunsByClient('full') : null;
   for (const col of info.columns) {
     const th = document.createElement('th');
     th.className = `${stickyBase} text-right`;
-    let label = info.kind === 'modes' ? modeLabel(col) : col;
+    let label;
+    let titleSuffix = '';
+    if (info.kind === 'modes') {
+      const n = successfulRunsForClientMode(state.client, col);
+      label = `${modeLabel(col)} (${n})`;
+      titleSuffix = ` — ${n} successful ${modeLabel(col)} runs for ${state.client}`;
+    } else {
+      const n = clientRunCounts[col] ?? 0;
+      label = `${col} (${n})`;
+      titleSuffix = ` — ${n} successful Full runs`;
+    }
     if (state.columnSort.column === col) {
       label += state.columnSort.direction === 'asc' ? ' ▲' : ' ▼';
     }
     th.textContent = label;
     th.classList.add('cursor-pointer', 'select-none', 'hover:text-gray-200');
-    th.title = 'Click to sort ascending · click again for descending · once more to clear';
+    th.title = `${col}${titleSuffix}. Click to sort.`;
     th.addEventListener('click', () => cycleColumnSort(col));
     tr.appendChild(th);
   }
@@ -709,6 +799,9 @@ function renderHead(info) {
 
 function renderSpreadSummary(entries, info) {
   const el = document.getElementById('gain-summary');
+  el.className = 'mt-4 rounded-xs border border-gray-800 bg-gray-900/40 px-4 py-3 text-sm';
+  el.replaceChildren();
+
   const ratios = [];
   const gaps = [];
   for (const entry of entries) {
@@ -719,27 +812,96 @@ function renderSpreadSummary(entries, info) {
     ratios.push(mx / mn);
     gaps.push((mx - mn) / mn);
   }
-  el.className = 'mt-4 rounded-xs border border-gray-800 bg-gray-900/40 px-4 py-3 text-sm';
-  el.replaceChildren();
+
+  const spreadBlock = document.createElement('div');
   if (!ratios.length) {
-    el.textContent = 'No tests have full-mode data from 2+ clients.';
-    el.classList.add('text-gray-400');
-    return;
+    spreadBlock.className = 'text-gray-400';
+    spreadBlock.textContent = 'No tests have full-mode data from 2+ clients.';
+  } else {
+    const meanRatio = ratios.reduce((a, b) => a + b, 0) / ratios.length;
+    const medianRatio = aggregate(ratios, 'median');
+    const maxRatio = Math.max(...ratios);
+    const meanGap = gaps.reduce((a, b) => a + b, 0) / gaps.length;
+    const l1 = document.createElement('div');
+    l1.className = 'text-gray-400';
+    l1.textContent = `Cross-client spread across ${ratios.length} tests (fastest / slowest):`;
+    const l2 = document.createElement('div');
+    l2.className = 'mt-1 text-lg font-semibold tabular-nums text-gray-100';
+    l2.textContent = `${meanRatio.toFixed(2)}× (mean)`;
+    const l3 = document.createElement('div');
+    l3.className = 'mt-1 text-xs text-gray-500 tabular-nums';
+    l3.textContent = `median ${medianRatio.toFixed(2)}× · max ${maxRatio.toFixed(2)}× · avg gap ${fmtPct(meanGap)}`;
+    spreadBlock.append(l1, l2, l3);
   }
-  const meanRatio = ratios.reduce((a, b) => a + b, 0) / ratios.length;
-  const medianRatio = aggregate(ratios, 'median');
-  const maxRatio = Math.max(...ratios);
-  const meanGap = gaps.reduce((a, b) => a + b, 0) / gaps.length;
-  const line1 = document.createElement('div');
-  line1.className = 'text-gray-400';
-  line1.textContent = `Full-mode client spread across ${ratios.length} tests:`;
-  const line2 = document.createElement('div');
-  line2.className = 'mt-1 text-lg font-semibold tabular-nums text-gray-100';
-  line2.textContent = `${meanRatio.toFixed(2)}× (fastest / slowest, mean)`;
-  const line3 = document.createElement('div');
-  line3.className = 'mt-1 text-xs text-gray-500 tabular-nums';
-  line3.textContent = `median ${medianRatio.toFixed(2)}× · max ${maxRatio.toFixed(2)}× · avg gap ${fmtPct(meanGap)}`;
-  el.append(line1, line2, line3);
+  el.appendChild(spreadBlock);
+
+  const perClientCovs = {};
+  for (const c of CLIENTS) perClientCovs[c] = [];
+  for (const entry of entries) {
+    if (!entry.covs) continue;
+    for (const c of CLIENTS) {
+      if (entry.covs[c] != null) perClientCovs[c].push(entry.covs[c]);
+    }
+  }
+  const varianceStats = [];
+  for (const c of CLIENTS) {
+    const covs = perClientCovs[c];
+    if (!covs.length) continue;
+    varianceStats.push({
+      client: c,
+      median: aggregate(covs, 'median'),
+      max: Math.max(...covs),
+      n: covs.length,
+    });
+  }
+  if (!varianceStats.length) return;
+
+  const divider = document.createElement('div');
+  divider.className = 'my-3 border-t border-gray-800';
+  el.appendChild(divider);
+
+  const title = document.createElement('div');
+  title.className = 'text-gray-400';
+  title.textContent = 'Run-to-run variance per client (median CoV across tests — higher = flakier):';
+  el.appendChild(title);
+
+  varianceStats.sort((a, b) => b.median - a.median);
+  const worstMedian = varianceStats[0].median;
+
+  const pills = document.createElement('div');
+  pills.className = 'mt-2 flex flex-wrap gap-2';
+  for (const s of varianceStats) {
+    const pill = document.createElement('span');
+    const isWorst = s.median === worstMedian && varianceStats.length > 1 && s.median > 0.01;
+    pill.className =
+      'rounded-xs border px-2 py-1 text-xs tabular-nums ' +
+      (isWorst
+        ? 'border-rose-800 bg-rose-950/50 text-rose-300'
+        : s.median < 0.01
+          ? 'border-emerald-800 bg-emerald-950/40 text-emerald-300'
+          : s.median < 0.03
+            ? 'border-gray-700 bg-gray-800/60 text-gray-300'
+            : 'border-amber-800 bg-amber-950/40 text-amber-300');
+    const clientSpan = document.createElement('span');
+    clientSpan.className = 'font-semibold';
+    clientSpan.style.color = CLIENT_COLORS[s.client] || '';
+    clientSpan.textContent = s.client;
+    const sep = document.createElement('span');
+    sep.className = 'mx-1 text-gray-500';
+    sep.textContent = '·';
+    const medSpan = document.createElement('span');
+    medSpan.textContent = `CoV ${(s.median * 100).toFixed(2)}%`;
+    pill.append(clientSpan, sep, medSpan);
+    pill.title = `${s.client} — median CoV ${(s.median * 100).toFixed(2)}% · worst test CoV ${(s.max * 100).toFixed(2)}% · across ${s.n} tests`;
+    pills.appendChild(pill);
+  }
+  el.appendChild(pills);
+
+  const hint = document.createElement('div');
+  hint.className = 'mt-2 text-xs text-gray-500';
+  hint.textContent =
+    'CoV = σ / mean of a client\'s repeated runs of a single test. Hover any cell in the table to see the per-test σ and CoV.';
+  el.appendChild(hint);
 }
 
 function renderGainSummary(entries, comparison) {
@@ -803,7 +965,18 @@ function compareBySortKey(a, b) {
   return a.test.localeCompare(b.test);
 }
 
+function refreshClientDropdownLabels() {
+  const sel = document.getElementById('client');
+  if (!sel) return;
+  const counts = successfulRunsByClient(null);
+  for (const opt of sel.options) {
+    const c = opt.value;
+    opt.textContent = counts[c] != null ? `${c} (${counts[c]} runs)` : c;
+  }
+}
+
 function render() {
+  refreshClientDropdownLabels();
   const method = document.getElementById('method').value;
   const comparisonKey = document.getElementById('comparison').value;
   const comparison = COMPARISONS[comparisonKey];
