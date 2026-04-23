@@ -1672,10 +1672,12 @@ function renderGasLimitFilters() {
   });
   container.replaceChildren();
   if (!limits.length) return;
+  const allKeys = limits.map(gasLimitKey);
   for (const gas of limits) {
     const key = gasLimitKey(gas);
     const label = document.createElement('label');
-    label.className = 'flex items-center gap-1.5';
+    label.className = 'flex cursor-pointer items-center gap-1.5 select-none';
+    label.title = 'Click to toggle · double-click to isolate';
     const cb = document.createElement('input');
     cb.type = 'checkbox';
     cb.className = 'size-3.5 accent-emerald-500';
@@ -1683,6 +1685,13 @@ function renderGasLimitFilters() {
     cb.addEventListener('change', () => {
       if (cb.checked) state.disabledGasLimits.delete(key);
       else state.disabledGasLimits.add(key);
+      render();
+    });
+    label.addEventListener('dblclick', (e) => {
+      e.preventDefault();
+      const onlyThis = new Set(allKeys.filter((k) => k !== key));
+      state.disabledGasLimits = onlyThis;
+      renderGasLimitFilters();
       render();
     });
     const span = document.createElement('span');
