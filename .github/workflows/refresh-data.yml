@@ -1,0 +1,41 @@
+name: Refresh cache data
+
+on:
+  schedule:
+    # Every 6 hours at :05 past
+    - cron: '5 */6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: refresh-cache
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Refresh cache
+        env:
+          BENCHMARKOOR_API_KEY: ${{ secrets.BENCHMARKOOR_API_KEY }}
+        run: python3 scripts/refresh_cache.py
+
+      - name: Commit and push if changed
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git add data/cache.json
+          if git diff --staged --quiet; then
+            echo "No cache changes."
+          else
+            git commit -m "Refresh cache data ($(date -u +%Y-%m-%dT%H:%M:%SZ))"
+            git push
+          fi

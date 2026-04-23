@@ -389,6 +389,57 @@ async function fetchAll(client) {
   return all;
 }
 
+async function fetchCache() {
+  try {
+    const res = await fetch('./data/cache.json', { cache: 'no-cache' });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
+function expandCachedRow(r, runIds, testNames) {
+  return {
+    id: r[0],
+    run_id: runIds[r[1]],
+    test_name: testNames[r[2]],
+    test_mgas_s: r[3],
+  };
+}
+
+async function fetchDeltaSince(minId) {
+  const all = [];
+  let offset = 0;
+  while (true) {
+    const url = `${CONFIG.BASE_URL}?suite_hash=eq.${CONFIG.SUITE_HASH}&id=gt.${minId}&select=id,run_id,test_name,test_mgas_s,client&limit=${CONFIG.PAGE_SIZE}&offset=${offset}`;
+    const res = await fetch(url, {
+      headers: { Authorization: `Bearer ${getApiKey()}` },
+    });
+    if (res.status === 401 || res.status === 403) {
+      const err = new Error('Unauthorized — API key missing or invalid');
+      err.code = 'UNAUTHORIZED';
+      throw err;
+    }
+    if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
+    const json = await res.json();
+    const rows = json.data || [];
+    all.push(...rows);
+    if (rows.length < CONFIG.PAGE_SIZE) break;
+    offset += CONFIG.PAGE_SIZE;
+  }
+  return all;
+}
+
+function formatCacheAge(ts) {
+  if (!ts) return '';
+  const age = Math.max(0, Math.floor(Date.now() / 1000 - ts));
+  if (age < 60) return `${age}s ago`;
+  if (age < 3600) return `${Math.floor(age / 60)}m ago`;
+  if (age < 86400) return `${Math.floor(age / 3600)}h ago`;
+  return `${Math.floor(age / 86400)}d ago`;
+}
+
 async function fetchRuns() {
   const all = [];
   let offset = 0;
@@ -1647,15 +1698,36 @@ function selectClient(client) {
   render();
 }
 
-async function reloadAll() {
-  const status = document.getElementById('status');
-  if (!getApiKey()) {
-    status.textContent = 'API key required';
-    status.className = 'text-amber-400';
-    openApiKeyModal();
-    return;
+function applyCacheToState(cache) {
+  state.rowsByClient = {};
+  const runIds = cache.run_ids || [];
+  const testNames = cache.test_names || [];
+  for (const c of CLIENTS) {
+    const cached = cache.test_stats?.[c] || [];
+    state.rowsByClient[c] = cached.map((r) => expandCachedRow(r, runIds, testNames));
   }
-  status.textContent = 'loading…';
+  state.runs = cache.runs || [];
+}
+
+function mergeDeltaIntoState(deltaRows) {
+  let added = 0;
+  for (const row of deltaRows) {
+    const c = row.client;
+    if (!c) continue;
+    if (!state.rowsByClient[c]) state.rowsByClient[c] = [];
+    state.rowsByClient[c].push({
+      id: row.id,
+      run_id: row.run_id,
+      test_name: row.test_name,
+      test_mgas_s: row.test_mgas_s,
+    });
+    added += 1;
+  }
+  return added;
+}
+
+async function fullFetchFallback(status) {
+  status.textContent = 'no cache · loading…';
   status.className = 'text-amber-400';
   const [results, runsResult] = await Promise.all([
     Promise.all(
@@ -1671,7 +1743,6 @@ async function reloadAll() {
       (e) => ({ rows: [], error: e }),
     ),
   ]);
-  state.runs = runsResult.rows || [];
   state.rowsByClient = {};
   const errors = [];
   for (const r of results) {
@@ -1683,15 +1754,79 @@ async function reloadAll() {
     status.textContent = `error: ${first?.message || 'load failed'}`;
     status.className = 'text-rose-400';
     if (first?.code === 'UNAUTHORIZED') openApiKeyModal(true);
-    return;
+    return false;
   }
+  state.runs = runsResult.rows || [];
   status.textContent = errors.length
-    ? `ok · ${CLIENTS.length - errors.length}/${CLIENTS.length} clients (errors: ${errors.join('; ')})`
-    : `ok · ${CLIENTS.length} clients loaded`;
+    ? `ok · ${CLIENTS.length - errors.length}/${CLIENTS.length} clients loaded (no cache)`
+    : `ok · ${CLIENTS.length} clients loaded (no cache)`;
   status.className = errors.length ? 'text-amber-400' : 'text-emerald-400';
+  return true;
+}
+
+async function reloadAll() {
+  const status = document.getElementById('status');
+  status.textContent = 'loading cache…';
+  status.className = 'text-amber-400';
+
+  const cache = await fetchCache();
+  let cacheMaxId = 0;
+  let cacheAge = '';
+  if (cache) {
+    applyCacheToState(cache);
+    cacheMaxId = cache.max_test_stats_id || 0;
+    cacheAge = formatCacheAge(cache.generated_at);
+  } else {
+    state.rowsByClient = Object.fromEntries(CLIENTS.map((c) => [c, []]));
+    state.runs = [];
+  }
+
   renderGasLimitFilters();
   renderRunsFilter();
   selectClient(document.getElementById('client').value);
+
+  const haveKey = !!getApiKey();
+
+  if (!haveKey && !cache) {
+    status.textContent = 'API key required (no cache available)';
+    status.className = 'text-amber-400';
+    openApiKeyModal();
+    return;
+  }
+  if (!haveKey && cache) {
+    status.textContent = `cache only · ${cacheAge} (add API key for latest)`;
+    status.className = 'text-amber-400';
+    openApiKeyModal();
+    return;
+  }
+
+  if (!cache) {
+    const ok = await fullFetchFallback(status);
+    if (!ok) return;
+    renderGasLimitFilters();
+    renderRunsFilter();
+    selectClient(document.getElementById('client').value);
+    return;
+  }
+
+  status.textContent = `cache ${cacheAge} · loading delta…`;
+  try {
+    const [deltaRows, runsRows] = await Promise.all([
+      fetchDeltaSince(cacheMaxId),
+      fetchRuns().catch(() => state.runs),
+    ]);
+    const added = mergeDeltaIntoState(deltaRows);
+    if (runsRows && runsRows.length) state.runs = runsRows;
+    renderGasLimitFilters();
+    renderRunsFilter();
+    selectClient(document.getElementById('client').value);
+    status.textContent = `ok · cache ${cacheAge} + ${added} new row${added === 1 ? '' : 's'}`;
+    status.className = 'text-emerald-400';
+  } catch (e) {
+    status.textContent = `cache only (${cacheAge}) · delta failed: ${e.message}`;
+    status.className = e.code === 'UNAUTHORIZED' ? 'text-rose-400' : 'text-amber-400';
+    if (e.code === 'UNAUTHORIZED') openApiKeyModal(true);
+  }
 }
 
 function openApiKeyModal(showError = false) {
