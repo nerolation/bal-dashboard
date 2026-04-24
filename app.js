@@ -1159,22 +1159,40 @@ function computeLeaderboard(method) {
   const results = [];
   for (const client of CLIENTS) {
     const rows = state.rowsByClient[client] || [];
-    const perTest = new Map();
+
+    // 1. Aggregate per test *variant* (same test_name — same function + same
+    //    parameter block) across repeated runs.
+    const perVariant = new Map();
     for (const row of rows) {
       if (modeFromRunId(row.run_id) !== 'full') continue;
       if (row.test_mgas_s == null || row.test_mgas_s <= 0) continue;
       if (!isRowInTimeWindow(row)) continue;
       if (!isTestNameEnabledByGas(row.test_name)) continue;
-      if (!perTest.has(row.test_name)) perTest.set(row.test_name, []);
-      perTest.get(row.test_name).push(row.test_mgas_s);
+      if (!perVariant.has(row.test_name)) perVariant.set(row.test_name, []);
+      perVariant.get(row.test_name).push(row.test_mgas_s);
     }
-    const tests = [];
-    for (const [test, vals] of perTest) {
+    const variants = [];
+    for (const [name, vals] of perVariant) {
       const agg = aggregate(vals, method);
-      if (agg != null) tests.push({ test, mgas: agg, n: vals.length });
+      if (agg != null) variants.push({ test: name, mgas: agg, n: vals.length });
     }
-    tests.sort((a, b) => a.mgas - b.mgas);
-    const worst10 = tests.slice(0, 10);
+
+    // 2. Collapse variants to *base test functions* — same function name
+    //    regardless of the parameter block — taking the single worst variant
+    //    per function so each function contributes at most once.
+    const perBase = new Map();
+    for (const v of variants) {
+      const parsed = parseTestName(v.test);
+      const baseKey = parsed.file && parsed.func ? `${parsed.file}::${parsed.func}` : v.test;
+      const existing = perBase.get(baseKey);
+      if (!existing || v.mgas < existing.mgas) {
+        perBase.set(baseKey, v);
+      }
+    }
+    const baseWorst = [...perBase.values()].sort((a, b) => a.mgas - b.mgas);
+
+    // 3. Pick the 10 base tests with the lowest worst-config score.
+    const worst10 = baseWorst.slice(0, 10);
     if (!worst10.length) continue;
     const meanScore = worst10.reduce((s, t) => s + t.mgas, 0) / worst10.length;
     const medianScore = aggregate(worst10.map((t) => t.mgas), 'median');
@@ -1186,7 +1204,7 @@ function computeLeaderboard(method) {
       medianScore,
       minScore: worstTest.mgas,
       worstTest,
-      totalTests: tests.length,
+      totalTests: baseWorst.length,
     });
   }
   results.sort((a, b) => b.meanScore - a.meanScore);
@@ -1210,8 +1228,9 @@ function makeLeaderboardHeader() {
   const sub = document.createElement('p');
   sub.className = 'mt-2 text-sm/6 text-gray-400';
   sub.innerHTML =
-    'Each client is scored on the <span class="font-semibold text-gray-200">mean MGas/s across its 10 slowest Full-mode tests</span>. ' +
-    'The gas-limit and runs-after filters apply.';
+    'Each test function contributes once — scored by its <em>worst</em> parameter combination. ' +
+    'Clients are then ranked on the <span class="font-semibold text-gray-200">mean MGas/s across their 10 slowest test functions</span>. ' +
+    'Gas-limit and runs-after filters apply.';
   header.appendChild(sub);
   return header;
 }
