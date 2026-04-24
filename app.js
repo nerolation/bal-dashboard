@@ -56,7 +56,7 @@ const state = {
   rows: [],
   runs: [],
   client: null,
-  tab: 'all',
+  tab: 'clients-full',
   disabledGasLimits: new Set(),
   columnSort: { column: null, direction: null },
 };
@@ -1899,7 +1899,7 @@ function init() {
     if (e.target === versionsDlg) versionsDlg.close();
   });
 
-  setTab('all');
+  setTab('clients-full');
   reloadAll();
 }
 
