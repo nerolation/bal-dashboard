@@ -460,8 +460,56 @@ async function fetchRuns() {
 }
 
 function modeFromRunId(runId) {
-  const m = runId.match(/-bal-(sequential|nobatchio|full)$/);
+  const m = runId.match(/-bal-(sequential|nobatchio|full)(?:-cpu\d+)?$/);
   return m ? m[1] : null;
+}
+
+function coresFromRunId(runId) {
+  const m = runId.match(/-cpu(\d+)$/);
+  return m ? parseInt(m[1], 10) : 4;
+}
+
+function coresFilter() {
+  const sel = document.getElementById('cores-filter');
+  if (!sel || !sel.value || sel.value === 'all') return null;
+  const v = parseInt(sel.value, 10);
+  return Number.isFinite(v) ? v : null;
+}
+
+function isRowInCoresFilter(row) {
+  const target = coresFilter();
+  if (target == null) return true;
+  return coresFromRunId(row.run_id) === target;
+}
+
+function renderCoresFilter() {
+  const sel = document.getElementById('cores-filter');
+  if (!sel) return;
+  const prev = sel.value;
+  const cores = new Set();
+  for (const c of CLIENTS) {
+    for (const row of state.rowsByClient[c] || []) {
+      cores.add(coresFromRunId(row.run_id));
+    }
+  }
+  const sorted = [...cores].sort((a, b) => a - b);
+  sel.replaceChildren();
+  const allOpt = document.createElement('option');
+  allOpt.value = 'all';
+  allOpt.textContent = 'All cores';
+  sel.appendChild(allOpt);
+  for (const n of sorted) {
+    const opt = document.createElement('option');
+    opt.value = String(n);
+    opt.textContent = `${n} cores`;
+    sel.appendChild(opt);
+  }
+  if (prev && [...sel.options].some((o) => o.value === prev)) {
+    sel.value = prev;
+  } else {
+    sel.value = '4';
+    if (![...sel.options].some((o) => o.value === '4')) sel.value = 'all';
+  }
 }
 
 function timestampFromRunId(runId) {
@@ -487,6 +535,7 @@ function successfulRunsForClientMode(client, mode) {
   const set = new Set();
   for (const row of state.rowsByClient[client] || []) {
     if (!isRowInTimeWindow(row)) continue;
+    if (!isRowInCoresFilter(row)) continue;
     if (row.test_mgas_s == null || row.test_mgas_s <= 0) continue;
     if (mode && modeFromRunId(row.run_id) !== mode) continue;
     set.add(row.run_id);
@@ -588,6 +637,7 @@ function groupByTest(rows) {
     if (!mode) continue;
     if (row.test_mgas_s == null || row.test_mgas_s <= 0) continue;
     if (!isRowInTimeWindow(row)) continue;
+    if (!isRowInCoresFilter(row)) continue;
     if (!groups.has(row.test_name)) {
       groups.set(row.test_name, { sequential: [], nobatchio: [], full: [] });
     }
@@ -639,6 +689,7 @@ function buildClientFullEntries(method) {
       if (modeFromRunId(row.run_id) !== 'full') continue;
       if (row.test_mgas_s == null || row.test_mgas_s <= 0) continue;
       if (!isRowInTimeWindow(row)) continue;
+      if (!isRowInCoresFilter(row)) continue;
       let e = byTest.get(row.test_name);
       if (!e) {
         e = { test: row.test_name, aggs: {}, counts: {}, _raw: {} };
@@ -1167,6 +1218,7 @@ function computeLeaderboard(method) {
       if (modeFromRunId(row.run_id) !== 'full') continue;
       if (row.test_mgas_s == null || row.test_mgas_s <= 0) continue;
       if (!isRowInTimeWindow(row)) continue;
+      if (!isRowInCoresFilter(row)) continue;
       if (!isTestNameEnabledByGas(row.test_name)) continue;
       if (!perVariant.has(row.test_name)) perVariant.set(row.test_name, []);
       perVariant.get(row.test_name).push(row.test_mgas_s);
@@ -1493,6 +1545,7 @@ function buildFamilyBuckets(rows, familyKey) {
     if (!mode) continue;
     if (row.test_mgas_s == null || row.test_mgas_s <= 0) continue;
     if (!isRowInTimeWindow(row)) continue;
+    if (!isRowInCoresFilter(row)) continue;
     const gas = extractGasLimit(row.test_name);
     if (gas == null) continue;
     if (!buckets.has(gas)) buckets.set(gas, { sequential: [], nobatchio: [], full: [] });
@@ -1574,6 +1627,7 @@ function renderFullAcrossClientsChart(familyKey, method) {
       if (modeFromRunId(row.run_id) !== 'full') continue;
       if (row.test_mgas_s == null || row.test_mgas_s <= 0) continue;
       if (!isRowInTimeWindow(row)) continue;
+      if (!isRowInCoresFilter(row)) continue;
       const gas = extractGasLimit(row.test_name);
       if (gas == null) continue;
       if (!bucket.has(gas)) bucket.set(gas, []);
@@ -1811,6 +1865,7 @@ async function reloadAll() {
 
   renderGasLimitFilters();
   renderRunsFilter();
+  renderCoresFilter();
   selectClient(document.getElementById('client').value);
 
   const haveKey = !!getApiKey();
@@ -1833,6 +1888,7 @@ async function reloadAll() {
     if (!ok) return;
     renderGasLimitFilters();
     renderRunsFilter();
+  renderCoresFilter();
     selectClient(document.getElementById('client').value);
     return;
   }
@@ -1847,6 +1903,7 @@ async function reloadAll() {
     if (runsRows && runsRows.length) state.runs = runsRows;
     renderGasLimitFilters();
     renderRunsFilter();
+  renderCoresFilter();
     selectClient(document.getElementById('client').value);
     status.textContent = `ok · cache ${cacheAge} + ${added} new row${added === 1 ? '' : 's'}`;
     status.className = 'text-emerald-400';
@@ -1898,6 +1955,7 @@ function init() {
   document.getElementById('comparison').addEventListener('change', render);
   document.getElementById('raw-names-toggle').addEventListener('change', render);
   document.getElementById('runs-after').addEventListener('change', render);
+  document.getElementById('cores-filter').addEventListener('change', render);
   for (const btn of document.querySelectorAll('.tab')) {
     btn.addEventListener('click', () => setTab(btn.dataset.tab));
   }
