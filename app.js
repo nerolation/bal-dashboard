@@ -496,12 +496,12 @@ function renderCoresFilter() {
   sel.replaceChildren();
   const allOpt = document.createElement('option');
   allOpt.value = 'all';
-  allOpt.textContent = 'All cores';
+  allOpt.textContent = 'All Cores';
   sel.appendChild(allOpt);
   for (const n of sorted) {
     const opt = document.createElement('option');
     opt.value = String(n);
-    opt.textContent = `${n} cores`;
+    opt.textContent = `${n} Cores`;
     sel.appendChild(opt);
   }
   if (prev && [...sel.options].some((o) => o.value === prev)) {
