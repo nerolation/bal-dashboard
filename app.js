@@ -506,9 +506,12 @@ function renderCoresFilter() {
   }
   if (prev && [...sel.options].some((o) => o.value === prev)) {
     sel.value = prev;
-  } else {
+  } else if ([...sel.options].some((o) => o.value === '6')) {
+    sel.value = '6';
+  } else if ([...sel.options].some((o) => o.value === '4')) {
     sel.value = '4';
-    if (![...sel.options].some((o) => o.value === '4')) sel.value = 'all';
+  } else {
+    sel.value = 'all';
   }
 }
 
