@@ -1,6 +1,6 @@
 const CONFIG = {
   BASE_URL: 'https://benchmarkoor-api.core.ethpandaops.io/api/v1/index/query/test_stats',
-  SUITE_HASH: 'bc398819d1ebc628',
+  SUITE_HASH: 'cc318a7af147902c',
   PAGE_SIZE: 1000,
 };
 
@@ -30,7 +30,7 @@ const MODE_LABELS = {
 function modeLabel(mode) {
   return MODE_LABELS[mode] || mode;
 }
-const CLIENTS = ['besu', 'geth', 'nethermind', 'erigon', 'reth'];
+const CLIENTS = ['besu', 'geth', 'nethermind', 'erigon', 'reth', 'ethrex'];
 
 const MODE_COLORS = {
   sequential: '#f87171',
@@ -44,6 +44,7 @@ const CLIENT_COLORS = {
   nethermind: '#22d3ee',
   erigon: '#f472b6',
   reth: '#fb923c',
+  ethrex: '#a3e635',
 };
 
 const COMPARISONS = {

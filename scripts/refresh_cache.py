@@ -29,8 +29,8 @@ if not API_KEY:
     sys.exit(1)
 
 BASE_URL = "https://benchmarkoor-api.core.ethpandaops.io/api/v1/index/query"
-SUITE_HASH = "bc398819d1ebc628"
-CLIENTS = ["besu", "geth", "nethermind", "erigon", "reth"]
+SUITE_HASH = "cc318a7af147902c"
+CLIENTS = ["besu", "geth", "nethermind", "erigon", "reth", "ethrex"]
 PAGE_SIZE = 1000
 OUT = Path("data") / "cache.json"
 
