@@ -394,7 +394,14 @@ async function fetchCache() {
   try {
     const res = await fetch('./data/cache.json', { cache: 'no-cache' });
     if (!res.ok) return null;
-    return await res.json();
+    const data = await res.json();
+    if (data && data.suite_hash && data.suite_hash !== CONFIG.SUITE_HASH) {
+      console.warn(
+        `Cache suite_hash (${data.suite_hash}) does not match expected (${CONFIG.SUITE_HASH}); ignoring cache.`,
+      );
+      return null;
+    }
+    return data;
   } catch {
     return null;
   }
@@ -467,7 +474,7 @@ function modeFromRunId(runId) {
 
 function coresFromRunId(runId) {
   const m = runId.match(/-cpu(\d+)$/);
-  return m ? parseInt(m[1], 10) : 4;
+  return m ? parseInt(m[1], 10) : 6;
 }
 
 function coresFilter() {
